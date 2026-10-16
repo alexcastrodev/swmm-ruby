@@ -1,0 +1,7 @@
+/vendor/
+/tmp/
+/pkg/
+*.gem
+.bundle/
+Gemfile.lock
+.vscode
