@@ -9,6 +9,7 @@ module Swmm
     BAD_CHARS = /["\r\n;]/ # quote, line end and comment start cannot travel inside a token
     US_DATE = %r{\A\d{1,2}/\d{1,2}/\d{4}\z}
     ISO_DATE = /\A(\d{4})-(\d{2})-(\d{2})\z/
+    INTEGER_OVERFLOW = (2**1024) - (2**970) # the first Integer that rounds to Infinity as a double (Float::MAX plus half an ulp)
     CLOCK = /\A\d{1,3}:\d{2}(:\d{2})?\z/
     # "2026-03-24 10:00", "2026-03-24T10:00:00.000Z", "03/24/2026 10:00 UTC": fraction and zone are dropped (SWMM has no time zone)
     STAMP = %r{\A(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})[T ](\d{1,2}:\d{2}(?::\d{2})?)(?:\.\d+)?\s?(?:Z|UTC|[+-]\d{2}:?\d{2})?\z}
@@ -74,12 +75,18 @@ module Swmm
 
     def num(v)
       raise ArgumentError, "must be a number, got #{v.inspect}" unless v.is_a?(Numeric) && !v.is_a?(Complex)
-      return v.to_s if v.is_a?(Integer)
+      if v.is_a?(Integer)
+        raise ArgumentError, "must be finite" if v.abs >= INTEGER_OVERFLOW # the engine's strtod reads it as infinity
+
+        return v.to_s
+      end
 
       f = Float(v)
       raise ArgumentError, "must be finite" unless f.finite?
 
       f.to_s
+    rescue TypeError # a Numeric subclass that cannot become a Float
+      raise ArgumentError, "must be a number, got #{v.inspect}"
     end
 
     def int(v) = v.is_a?(Integer) ? v.to_s : raise(ArgumentError, "must be an Integer, got #{v.inspect}")
@@ -94,6 +101,7 @@ module Swmm
     end
 
     def date(v) # MM/DD/YYYY; accepts Date/Time or "YYYY-MM-DD"
+      v = v.to_s if v.is_a?(Symbol) # a Symbol matches the patterns but Date.strptime / iso8601 raise TypeError on it
       case v
       when Date, Time then v
       when US_DATE then Date.strptime(v, "%m/%d/%Y")

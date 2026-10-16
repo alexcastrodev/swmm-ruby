@@ -272,8 +272,14 @@ class InputAdversarialTest < Minitest::Test
   # num rejects Float::INFINITY, but an Integer beyond the Float range is written in full and strtod reads it as
   # infinity: Swmm.run with junction elevation 10**309 finishes "ok" with the node full and no flow.
   def test_integers_beyond_the_float_range_are_rejected_like_infinity
-    skip "BUG: Integer >= 2**1024 is accepted by num; the engine reads it as infinity - types.rb:51" unless ENV["SWMM_SHOW_BUGS"]
     assert_raises(ArgumentError) { Swmm::Types.num(10**309) }
+  end
+
+  # A Numeric subclass without #to_f used to make validate raise TypeError instead of listing the error.
+  def test_a_numeric_that_cannot_become_a_float_is_a_contract_error
+    unfloatable = Class.new(Numeric)
+    assert_equal ["junctions[0].elevation"], errors(junctions: [{ name: "J", elevation: unfloatable.new }]).map { _1[:path] }
+    assert_raises(ArgumentError) { Swmm::Types.num(unfloatable.new) }
   end
 
   def test_yes_no_words_and_case
@@ -336,7 +342,6 @@ class InputAdversarialTest < Minitest::Test
   end
 
   def test_symbol_dates_are_reported_not_raised
-    skip "BUG: a date-shaped Symbol passes the regexp and Date.strptime/iso8601 raise TypeError - types.rb:73-74" unless ENV["SWMM_SHOW_BUGS"]
     [:"03/24/2026", :"2026-03-24"].each do |d|
       assert_kind_of Array, Swmm::Input.validate(options: { start_date: d })
     end

@@ -116,7 +116,8 @@ module Swmm
     def mass_balance
       ptrs = Array.new(3) { FFI::MemoryPointer.new(:float) }
       @lib.swmm_getMassBalErr(*ptrs)
-      %i[runoff flow_routing quality].zip(ptrs.map(&:read_float)).to_h
+      # float32 read as a double carries noise (-0.14386397600173950): same 7 digits as every series; NaN stays NaN
+      %i[runoff flow_routing quality].zip(ptrs.map { |p| p.read_float.then { _1.finite? ? OutputFile.clean(_1) : _1 } }).to_h
     end
 
     def error_message

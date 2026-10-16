@@ -14,6 +14,7 @@ Plataformas: macOS arm64, Linux aarch64 (Docker) e Linux x86_64 (glibc). Motor: 
 | `csv_test.rb` | conteúdo do CSV contra oráculo independente, quoting, caminho em Ractors |
 | `ractor_test.rb` | módulo FFI congelado é compartilhável e um Ractor chama o motor |
 | `result_test.rb` | parser do relatório (instabilidade), tolerância de continuidade |
+| `known_engine_bugs_test.rb` | os dois bugs conhecidos do motor (`docs/known-issues.md`): janelas que perdem o último período e heap cheio de `0xFF` contra a leitura de memória não inicializada do snowpack, ambos `skip` (`SWMM_SHOW_BUGS=1` os executa); o contorno (terminar 1 segundo depois) roda sempre |
 | `read_test.rb` | `Swmm.read` (`rpt`/`out` → `Result`): igual ao `Swmm.run`, continuidade com poluentes, erro sem `.out`, código de erro no epílogo, só o `.rpt`, arquivos inválidos, sem motor nem lib |
 
 ## 2. Riscos e lacunas
@@ -60,12 +61,12 @@ Regras para quem testa:
 
 ## 6. Resultados (2026-10-16)
 
-Suíte: **196 execuções, 30 299 asserts, 0 falhas, 5 pulados**, em macOS arm64, Linux aarch64 (Docker) e Linux x86_64 (Debian 13), Ruby 4.0.7. Os 5 pulados são todos `skip "BUG: …"` (A 2, B 2, C 1): cada um guarda a reprodução de um defeito ainda aberto e foi visto falhando ao remover o `skip`. Nos testes de A, `SWMM_SHOW_BUGS=1` os executa. A suíte completa rodou 36 vezes seguidas em Docker, em paralelo e com a CPU saturada, sem falha intermitente.
+Suíte: **203 execuções, 30 523 asserts, 0 falhas, 2 pulados**, em macOS arm64, Linux aarch64 (Docker, 3 rodadas) e Linux x86_64 (Debian 13, 3 rodadas), Ruby 4.0.7, com a `libswmm5` da EPA sem alterações. Os 2 pulados são os dois bugs conhecidos do motor (`KnownEngineBugsTest`, [`known-issues.md`](known-issues.md)): descrevem o comportamento correto e falham com o motor como é lançado; `SWMM_SHOW_BUGS=1` os executa. Todos os outros defeitos da lista abaixo foram corrigidos.
 
 | frente | arquivo | testes | defeitos reproduzidos |
 |---|---|---|---|
-| A — entrada | `input_adversarial_test.rb` | 32 | 12 (4 altos e 4 médios **corrigidos**; faltam IN-9 e IN-10) |
-| B — `.out` hostil | `output_fuzz_test.rb` | 22 | 9 (1 alto e 6 médios **corrigidos**; faltam unidades negativas e argumentos que não são String) |
+| A — entrada | `input_adversarial_test.rb` | 33 | 12 (4 altos, 4 médios e IN-9, IN-10, IN-11 **corrigidos**; IN-12 é bug do Ruby) |
+| B — `.out` hostil | `output_fuzz_test.rb` | 22 | 9 (**todos corrigidos**) |
 | C — fidelidade | `fidelity_test.rb` | 39 | 1 + 2 comportamentos do motor |
 | D — concorrência | `concurrency_test.rb` | 51 | 8 (1 médio e 7 baixos, **todos corrigidos**) |
 
@@ -86,9 +87,11 @@ Defeitos, por prioridade. IN-1 a IN-8, OUT-1 a OUT-7 e D-1 a D-8 foram **corrigi
 | IN-8 ✔ | média | chaves que diferem só na caixa (`junctions`/`JUNCTIONS`) perdem dados em silêncio | `input.rb` |
 | OUT-2..7 ✔ | média | `OutputFile.new` levanta `ArgumentError`, `NoMethodError`, `IndexError` ou `FloatDomainError` em vez de `OutputFormatError` (contagens/ids/códigos de variável/datas inválidos); códigos de variável negativos são aceitos com nomes errados | `output_file.rb` |
 | D-1 ✔ | média | um filho criado com `fork` apaga as cópias da lib do pai ao sair (`at_exit` herdado); o `run_many` seguinte falha com `ENOENT` | `engine.rb` |
-| MOTOR-2 † | média | **o motor não é determinístico em Linux** quando um subcatchment usa um snowpack: ~1,5% das execuções saem diferentes (continuidade de runoff `NaN`, runoff do S1 zerado, routing 6,4177 em vez de 5,966). 1200 execuções no macOS: sempre iguais; Linux aarch64 e x86_64: sim. Só o uso do snowpack dispara (0 de 800 com o snowpack definido e sem uso; a remoção por arado não importa). Fez um teste da suíte falhar de forma intermitente; o `Fixtures.full` não usa mais o snowpack e um teste próprio só confere que o motor aceita a entrada | libswmm5 |
-| MOTOR-1 † | média | o motor às vezes não salva o último período (16 de 60 datas aleatórias; igual ao `swmm_run` puro); `Result` não avisa | libswmm5 |
+| MOTOR-2 † | média | **bug conhecido, sem patch (decisão do projeto)**: o motor dá resultado diferente em Linux (~2% das execuções: continuidade de runoff `NaN`, runoff do S1 zerado) quando um subcatchment usa snowpack com superfície de área zero: `imelt[]` não inicializado em `snow.c`. Causa provada com valgrind; correção de uma linha em `docs/known-issues.md`; a gem exporta a continuidade `NaN` como `null` e `continuity_ok?` dá `false` | libswmm5 |
+| MOTOR-1 † | média | **bug conhecido, sem patch (decisão do projeto)**: o motor não grava o último período em ~1 de cada 3 janelas (`TotalDuration` truncado em ponto flutuante, `project.c`); igual ao `swmm_run` puro, em qualquer plataforma. Contorno verificado (terminar 1 segundo depois) e correção de uma linha em `docs/known-issues.md` | libswmm5 |
 | D-2..8 ✔ | baixa | `run_many`: `workers: 0` devolvia `[nil, nil, nil]`; os outros workers não paravam após uma exceção; a exceção era impressa e relançada; `run_many(hash)` iterava pares; `nil`/`""` não eram validados; corrida em `Warning[:experimental]`; `SWMM_LIB` inválido tratado diferente em `run` e `run_many` | `swmm.rb`, `engine.rb`, `output_file.rb` |
-| IN-9..12, OUT-8/9, C-1 | baixa | Symbol com formato de data; inteiro enorme aceito; arrays muito aninhados (bug do Ruby); `OutputFile.new(nil)`; códigos de unidade negativos; `continuity` com ruído de float32 | vários |
+| IN-9, IN-10, IN-11, OUT-8, OUT-9, C-1 ✔ | baixa | Symbol com formato de data levantava `TypeError`; inteiro maior que o `Float` era aceito (o motor lê infinito); subclasse de `Numeric` sem `to_f` levantava `TypeError` em `validate`; códigos de unidade negativos eram aceitos (índice pelo fim da tabela); `OutputFile.new(nil)` levantava `NoMethodError` (agora `TypeError`); `continuity` com ruído de float32 | `types.rb`, `output_file.rb`, `engine.rb` |
+| IN-12 | baixa | arrays aninhados em ~10 000 níveis derrubam o próprio Ruby 4.0.7 (SIGILL em `Array#inspect`); bug do interpretador, o limite de profundidade padrão do `JSON.parse` (100) evita | Ruby |
+| NOVO-1 ✔ | baixa | com continuidade `NaN` (resultado do MOTOR-2) `Result#to_json` levantava `JSON::GeneratorError`; agora `to_h`/`to_json` exportam `null` para valores não finitos, e `result.continuity` mantém o `NaN` (então `continuity_ok?` continua `false`) | `result.rb` |
 
 Comportamentos do motor (sem defeito do wrapper): `OutputFile#start` é um período antes do primeiro resultado quando `report_start` é posterior; o `.rpt` gerado pela gem não tem as tabelas de séries por nó/link porque a gem não chama `swmm_report`.

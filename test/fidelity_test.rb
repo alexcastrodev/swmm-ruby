@@ -421,9 +421,10 @@ class EngineOracleTest < Minitest::Test
     end
   end
 
-  # Engine behaviour, reproduced with the stock swmm_run of the same libswmm5 (not a wrapper defect): for about 1 start time in 4
+  # Engine behaviour, reproduced with the stock swmm_run of the same libswmm5 (not a wrapper defect): for about 1 start time in 3
   # the period that falls exactly on the end date is not saved (floating-point date arithmetic in SWMM 5.2.4), so the last time is
-  # 10 minutes before the end. Nothing in Result tells the caller. The test pins the facts so a change (engine fix) is noticed.
+  # 10 minutes before the end. Nothing in Result tells the caller. Known engine bug (docs/known-issues.md, #1); the test pins the
+  # facts so a change (an engine fix) is noticed.
   def test_the_period_on_the_end_date_can_be_missing_because_of_the_engine
     short = with_options(start_date: "2022-11-27", start_time: "11:00", end_date: "2022-11-27", end_time: "13:00")
     Dir.mktmpdir do |dir|
@@ -462,7 +463,6 @@ class EngineOracleTest < Minitest::Test
   end
 
   def test_continuity_is_cleaned_like_every_other_float
-    skip "BUG: Result#continuity (and to_h/to_json) expose float32 noise, e.g. -0.1438639760017395, while every series is cleaned to 7 digits (-0.143864)"
     continuity = assert_runs(Fixtures.base).continuity
     continuity.each_value { |v| assert_equal Swmm::OutputFile.clean(v), v }
   end

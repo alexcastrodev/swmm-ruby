@@ -90,7 +90,7 @@ module Swmm
     # ponytail: the whole .out stays in memory (fine up to a few hundred MB); switch to IO seeks beyond that.
     # Values are read little-endian, as the engine writes them on x86/arm64.
     def initialize(bytes)
-      @bytes = bytes.b
+      @bytes = (String.try_convert(bytes) or raise TypeError, "the .out contents must be a String, got #{bytes.class}").b
       parse
     end
 
@@ -159,14 +159,14 @@ module Swmm
       id_pos, input_pos, @output_pos, @periods, @engine_error, magic_end = b.byteslice(-24, 24).unpack("l<6")
       raise OutputFormatError, "not a SWMM output file (bad magic number)" unless magic == MAGIC && magic_end == MAGIC
 
-      @flow_units = FLOW_UNITS.fetch(units) { raise OutputFormatError, "unknown flow units code #{units}" }
+      @flow_units = unit_name(FLOW_UNITS, units, "flow")
       n_sub, n_node, n_link, n_pol = counts
       @cursor = 28
       raise OutputFormatError, "unexpected id block position" unless @cursor == id_pos
 
       @ids = { subcatchments: read_ids(n_sub), nodes: read_ids(n_node), links: read_ids(n_link) }
       @pollutants = read_ids(n_pol)
-      @pollutant_units = @pollutants.zip(ints(n_pol).map { POLLUTANT_UNITS[_1] }).to_h
+      @pollutant_units = @pollutants.zip(ints(n_pol).map { unit_name(POLLUTANT_UNITS, _1, "pollutant") }).to_h
       raise OutputFormatError, "unexpected input block position" unless @cursor == input_pos
 
       # input block: #properties, their codes, then per-object values (4 bytes each, +4 for nodes/links type code)
@@ -183,6 +183,9 @@ module Swmm
       # ponytail: O(periods) unpack of every date at construction, so #times never meets a NaN; fine at hundreds of thousands of periods
       @periods.times { |p| date_at(period_offset(p)) }
     end
+
+    # a negative code would index the table from its end, a too-large one would give nil: both are a corrupted file
+    def unit_name(table, code, what) = (code >= 0 && table[code]) || raise(OutputFormatError, "output file is corrupted: unknown #{what} units code #{code}")
 
     # a SWMM date (float64 days) as a Time; NaN / Infinity cannot be one
     def date_at(offset)

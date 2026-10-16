@@ -135,7 +135,6 @@ class OutputFuzzSyntheticTest < Minitest::Test
   end
 
   def test_non_string_input_raises_a_clear_error
-    skip "BUG: nil / Integer / Symbol / Array / IO raise NoMethodError (undefined method 'b') in OutputFile#initialize"
     [nil, 1, :out, [], $stdin, 1.5].each do |input|
       assert_raises(Swmm::OutputFormatError, TypeError, input.inspect) { Swmm::OutputFile.new(input) }
     end
@@ -357,7 +356,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_unit_codes_out_of_range_raise_format_error
-    skip "BUG: flow units -1..-6 and pollutant units -1..-3 index FLOW_UNITS / POLLUTANT_UNITS from the end (-1 reads MLD / #/L) in #parse"
     each_file do |name, bytes, at|
       [-1, -6].each { |v| assert_raises(Swmm::OutputFormatError, "#{name} units=#{v}") { Swmm::OutputFile.new(i32(bytes, at[:units], v)) } }
       next if at[:pol_units] == at[:input]

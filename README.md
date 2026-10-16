@@ -65,7 +65,7 @@ result.to_h  # =>
   swmm_version: "5.2.4",
   error: nil,                                    # { code: 200, message: "...", details: ["ERROR 209: undefined object X at line 14 ..."] }
   warnings: ["WARNING 02: maximum depth increased for Node J1"],
-  continuity: { runoff: 0.0, flow_routing: -0.14, quality: 0.0 },   # erro de continuidade, % (nil se falhou)
+  continuity: { runoff: 0.0, flow_routing: -0.14, quality: 0.0 },   # erro de continuidade, % (nil se falhou; um valor não finito, como NaN, vira null no JSON)
   flow_instability: {},                          # { "C5" => 45, ... } links instáveis segundo o relatório; {} se todos estáveis
   files: nil,                                    # { inp:, rpt:, out: } quando se usa dir:
   output: {
@@ -114,7 +114,7 @@ Cada worker é uma thread com a sua própria cópia do arquivo da lib (o motor t
 - Caminhos relativos em `files` e `timeseries file` são resolvidos pelo motor a partir da pasta do `.inp`; com `Swmm.run(hash)` use caminhos absolutos.
 - O motor lê no máximo 40 itens e 1023 **bytes** por linha e descarta o resto em silêncio; o contrato recusa linhas assim. Também recusa nomes e linhas que começam com `[` (o motor leria como início de seção) e qualquer texto com quebra de linha ou NUL.
 - **Nomes de objeto não podem ter espaços** (nem as referências a eles): o motor conta os objetos numa primeira passada que ignora aspas, então um nome como `"J 1"` nunca poderia ser usado. Caminhos, tags, rótulos e nomes de regra podem ter espaços (vão entre aspas). Textos devem ser UTF-8: UTF-16, Latin-1 e binário com UTF-8 válido são convertidos; o resto é recusado. Chaves que só diferem na caixa (`junctions` e `JUNCTIONS`) são um erro, não uma sobrescrita. Linhas cruas (Array) não distinguem nome de rótulo, então um nome com espaço passa pelo contrato e o motor o recusa.
-- **Em Linux, a `libswmm5` 5.2.4 não é determinística** para um modelo em que um subcatchment usa um snowpack: em ~1,5% das execuções o resultado sai diferente (continuidade de runoff `NaN`, runoff zerado). Não apareceu no macOS. `continuity_ok?` devolve `false` nesses casos.
+- **Bugs conhecidos do motor (SWMM 5.2.4, sem correção na gem):** (1) em cerca de 1 de cada 3 janelas de simulação o último período de relatório não é gravado (contorno: terminar a simulação 1 segundo depois, `end_time: "13:00:01"`); (2) em Linux, um modelo cujo subcatchment usa um snowpack com superfície de área zero dá, em ~2% das execuções idênticas, um resultado errado (continuidade `NaN`; contorno: repetir a simulação). Os dois terminam com `ok? == true`. Causa, como reconhecer e o diff de uma linha de cada um: [`docs/known-issues.md`](docs/known-issues.md).
 - O `.out` inteiro fica em memória. Um crash dentro da lib C derruba o processo.
 
 ## Testes

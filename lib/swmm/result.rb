@@ -82,7 +82,7 @@ module Swmm
 
     def to_h(series: true)
       {
-        status: status, swmm_version: version, error: error, warnings: warnings, continuity: continuity,
+        status: status, swmm_version: version, error: error, warnings: warnings, continuity: json_safe(continuity),
         flow_instability: flow_instability, files: files, output: output && output_h(series)
       }
     end
@@ -96,6 +96,10 @@ module Swmm
     end
 
     private
+
+    # JSON has no NaN / Infinity (to_json would raise): in the exported data a non-finite continuity error is null.
+    # #continuity keeps the real value, so continuity_ok? stays false for it.
+    def json_safe(hash) = hash&.transform_values { _1.finite? ? _1 : nil }
 
     # "Highest Flow Instability Indexes" lists "  Link C1 (12)" (or "All links are stable."); the section stops at the next banner.
     def flow_instability_of(report)
