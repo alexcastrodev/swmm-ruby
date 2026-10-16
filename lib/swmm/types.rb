@@ -16,32 +16,57 @@ module Swmm
     module_function
 
     def convert(type, value)
+      value = utf8(value) if value.is_a?(String)
       type.is_a?(Array) ? one_of(type, value) : public_send(type, value)
     end
 
-    # name / identifier: String, Symbol or Integer; quoted when it holds blanks
+    # Contract text is UTF-8: a String in another encoding is converted when it can be (UTF-16, Latin-1,
+    # BINARY holding UTF-8), anything else is rejected. Every converter below sees UTF-8 only.
+    def utf8(v)
+      s = case v.encoding
+          when Encoding::UTF_8 then v
+          when Encoding::BINARY then v.dup.force_encoding(Encoding::UTF_8)
+          else v.encode(Encoding::UTF_8)
+          end
+      s.valid_encoding? ? s : raise(ArgumentError, "must be valid UTF-8")
+    rescue EncodingError
+      raise ArgumentError, "must be valid UTF-8"
+    end
+
+    # text token: quoted when it holds blanks; checked for NUL before the strip would swallow it
     def word(v)
       raise ArgumentError, "must be a String, Symbol or Integer, got #{v.class}" unless [String, Symbol, Integer].any? { v.is_a?(_1) }
 
-      s = v.to_s.strip
+      s = utf8(v.to_s)
+      raise ArgumentError, "must not contain NUL" if s.include?("\0")
+
+      s = s.strip
       raise ArgumentError, %(must not contain ", ; or line breaks) if s.match?(BAD_CHARS)
       raise ArgumentError, %(must not start with "[") if s.start_with?("[") # the engine reads it as a section header, quoted or not
 
       s.empty? || s.match?(/\s/) ? %("#{s}") : s
     end
 
-    def id(v)
-      word(v).then { |s| s == '""' ? raise(ArgumentError, "must not be blank") : s }
-    end
+    # label, path or tag: blanks are quoted, the engine's second pass honours the quotes
+    def label(v) = word(v).then { |s| s == '""' ? raise(ArgumentError, "must not be blank") : s }
 
-    def opt_id(v) = word(v) # blank allowed (written as "")
+    # object names and the references to them: the engine counts objects in a first pass that ignores quotes,
+    # so a name with blanks is counted as its first word and can never be defined (ERROR 209 on every use)
+    def bare(s) = s != '""' && s.start_with?('"') ? raise(ArgumentError, "must not contain blanks") : s
 
-    def any(v) = v.is_a?(Numeric) ? num(v) : word(v) # number or name (e.g. FIXED stage or tidal curve)
+    def id(v) = bare(label(v))
 
-    def raw(v) = [true, false].include?(v) ? yn(v) : any(v) # tokens of a raw Array row
+    def opt_id(v) = bare(word(v)) # blank allowed (written as "")
+
+    def any(v) = v.is_a?(Numeric) ? num(v) : bare(word(v)) # number or name (e.g. FIXED stage or tidal curve)
+
+    # tokens of a raw Array row: written as given, so a blank is quoted
+    # ponytail: a raw row cannot tell names from labels, so a name with blanks passes here and the engine rejects it (ERROR 209); typed rows are checked
+    def raw(v) = [true, false].include?(v) ? yn(v) : v.is_a?(Numeric) ? num(v) : word(v)
 
     def text(v) # free text kept verbatim (expressions)
       raise ArgumentError, "must be a non-empty String" unless v.is_a?(String) && !v.strip.empty?
+      raise ArgumentError, "must not contain NUL" if v.include?("\0")
       raise ArgumentError, "must not contain ; or line breaks" if v.match?(/[;\r\n]/)
 
       v.strip

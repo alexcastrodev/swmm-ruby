@@ -638,7 +638,6 @@ class FreshProcessTest < Minitest::Test
   end
 
   def test_a_forked_child_exiting_must_not_remove_the_parents_library_copies
-    skip "BUG: the at_exit that removes the copies directory is inherited by fork; a child that exits deletes it under the parent, and the next pool growth fails with Errno::ENOENT (lib/swmm/engine.rb:50)"
     script = <<~RUBY
       require "swmm"; require "fixtures"
       Swmm.run_many([Fixtures.base] * 2, workers: 2)

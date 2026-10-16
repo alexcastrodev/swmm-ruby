@@ -336,7 +336,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_altered_variable_blocks_raise_format_error
-    skip "BUG: variable codes past the pollutants raise IndexError (#variable_names), count -1 ArgumentError (#read_ints), negative codes are accepted as nil/duplicate names"
     cases = []
     each_file do |name, bytes, at|
       at[:var_counts].each_with_index { |o, k| [-1, 1, 100].each { |v| cases << ["#{name} var_count#{k}=#{v}", i32(bytes, o, v)] } }
@@ -348,7 +347,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_non_finite_dates_raise_format_error_or_read_as_nil
-    skip "BUG: a NaN/Infinity start date raises FloatDomainError (#parse); a NaN period date is accepted and then #times raises FloatDomainError"
     cases = []
     each_file do |name, bytes, at|
       [Float::NAN, Float::INFINITY, -Float::INFINITY].each do |v|
@@ -369,7 +367,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_truncation_with_the_epilogue_kept_anywhere_raises_format_error
-    skip "BUG: cuts in the id/input/variable blocks raise ArgumentError, IndexError or NoMethodError (#read_ints, #read_ids, #variable_names)"
     rng = Random.new(1234)
     cases = []
     each_file do |name, bytes, at|
@@ -380,7 +377,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_seeded_corruption_anywhere_keeps_the_contract
-    skip "BUG: flips/overwrites before the values area raise IndexError, ArgumentError, NoMethodError or FloatDomainError (#parse and its readers)"
     rng = Random.new(1234)
     cases = []
     each_file do |name, bytes, at|

@@ -7,8 +7,9 @@ class InputTest < Minitest::Test
 
   def errors(**sections) = Swmm::Input.validate(sections).to_h { [_1[:path], _1[:message]] }
 
-  def test_rows_get_defaults_and_names_with_blanks_are_quoted
-    assert_includes inp(junctions: [{ name: "Poço 1", elevation: 10 }]), %("Poço 1" 10 0 0 0 0)
+  def test_rows_get_defaults_and_blanks_are_rejected_in_names_and_quoted_in_labels
+    assert_equal({ "junctions[0].name" => "must not contain blanks" }, errors(junctions: [{ name: "Poço 1", elevation: 10 }]))
+    assert_includes inp(tags: [{ type: "Node", name: "J1", tag: "up stream" }]), %(Node J1 "up stream")
     assert_includes inp(conduits: [{ name: "C", from_node: "A", to_node: "B", length: 5, roughness: 0.01, in_offset: 0, out_offset: 0 }]), "C A B 5 0.01 0 0 0 0"
   end
 

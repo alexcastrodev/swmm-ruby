@@ -47,7 +47,8 @@ module Swmm
         INIT.synchronize do
           @pool ||= []
           source = library_candidates.find { File.file?(_1) } or raise LibraryNotFound, library_not_found_message
-          @copies ||= Dir.mktmpdir("swmm-lib").tap { |dir| at_exit { FileUtils.rm_rf(dir) } }
+          # only the creator removes the copies: a forked child inherits this hook and would delete them under its parent
+          @copies ||= Dir.mktmpdir("swmm-lib").tap { |dir| owner = Process.pid; at_exit { FileUtils.rm_rf(dir) if Process.pid == owner } }
           while @pool.size < count
             copy = File.join(@copies, "#{@pool.size}-#{File.basename(source)}")
             FileUtils.cp(source, copy)

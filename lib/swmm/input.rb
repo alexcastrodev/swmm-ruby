@@ -14,6 +14,8 @@ module Swmm
   class Input
     MAX_TOKENS = 40 # SWMM's MAXTOKS: tokens past this are silently dropped by the engine
     MAX_LINE = 1023 # MAXLINE - 1
+    # Columns that hold a label or a path, not an object name: blanks are quoted (the engine's second pass honours quotes)
+    LABELS = %i[path station text tag tempdir file report_file].freeze
 
     attr_reader :to_inp
 
@@ -52,12 +54,25 @@ module Swmm
 
     def error(path, message) = @errors << { path: path, message: message }
 
-    # Hash (any key case/type) -> Hash with lowercase Symbol keys; reports non-Hashes.
+    # Hash (any key case/type) -> Hash with lowercase Symbol keys; reports non-Hashes, keys that are not UTF-8
+    # and keys that differ only in case (one would silently replace the other).
     def symbolize(value, path, top: false)
       return error(path, "must be a Hash") && nil unless value.is_a?(Hash)
 
-      value.transform_keys { |k| k.to_s.downcase.then { top ? _1.delete("[]") : _1 }.to_sym }
+      seen = {}
+      value.each_with_object({}) do |(k, v), h|
+        name = Types.utf8(k.to_s)
+        key = name.downcase.then { top ? _1.delete("[]") : _1 }.to_sym
+        error(path, %(keys "#{seen[key]}" and "#{name}" are the same: names are case-insensitive)) if seen.key?(key)
+        seen[key] = name
+        h[key] = v
+      rescue ArgumentError => e
+        error("#{path}.#{k.to_s.inspect}", e.message)
+      end
     end
+
+    # a Types converter, or a label/path where the column holds one (see LABELS)
+    def kind(type, name, labels = LABELS) = type.is_a?(Symbol) && labels.include?(name) ? :label : type
 
     def convert_one(type, value, path)
       Types.convert(type, value)
@@ -87,7 +102,9 @@ module Swmm
     # ---- columns -------------------------------------------------------------------------------
 
     def active?(col, row)
-      col.only.nil? || col.only[1].any? { _1.casecmp?(row[col.only[0]].to_s) }
+      col.only.nil? || col.only[1].any? { _1.casecmp?(Types.utf8(row[col.only[0]].to_s)) }
+    rescue ArgumentError
+      false # not valid text: the column itself reports it
     end
 
     def count_ok?(spec, n)
@@ -98,19 +115,20 @@ module Swmm
       end
     end
 
-    def convert_column(col, value, path)
-      return [convert_one(col.type, value, path)].compact unless col.list
+    def convert_column(col, value, path, labels = LABELS)
+      type = kind(col.type, col.name, labels)
+      return [convert_one(type, value, path)].compact unless col.list
 
       value = value.to_a.flatten(1) if value.is_a?(Hash) # { "RES" => 50 } -> ["RES", 50]
       return error(path, "must be an Array") && nil unless value.is_a?(Array)
       return error(path, "needs #{col.list} items, got #{value.size}") && nil unless count_ok?(col.list, value.size)
 
-      tokens = value.each_with_index.map { |v, i| convert_one(col.type, v, "#{path}[#{i}]") }
+      tokens = value.each_with_index.map { |v, i| convert_one(type, v, "#{path}[#{i}]") }
       tokens.compact if tokens.none?(&:nil?)
     end
 
     # Hash row -> tokens following the section's columns.
-    def row_tokens(cols, row, path)
+    def row_tokens(cols, row, path, labels = LABELS)
       row = symbolize(row, path) or return
       (row.keys - cols.map(&:name)).each { error("#{path}.#{_1}", "unknown column (valid: #{cols.map(&:name).join(", ")})") }
       tokens = []
@@ -128,7 +146,7 @@ module Swmm
           gap ||= col.name
           next
         end
-        found = convert_column(col, value, "#{path}.#{col.name}") or next
+        found = convert_column(col, value, "#{path}.#{col.name}", labels) or next
         error("#{path}.#{col.name}", "needs #{gap} to be set first (use \"*\" to skip it where SWMM allows)") if gap && given && found.any?
         tokens.concat(found)
       end
@@ -144,7 +162,7 @@ module Swmm
 
     def render_rows(name, section, rows)
       each_item(name, rows).flat_map do |row, path|
-        tokens = row.is_a?(Array) ? raw_tokens(row, path) : row_tokens(section.columns, row, path)
+        tokens = row.is_a?(Array) ? raw_tokens(row, path) : row_tokens(section.columns, row, path, name == :profiles ? [:name, *LABELS] : LABELS) # a profile name is a label
         tokens ? [line(path, tokens)] : []
       end
     end
@@ -156,13 +174,13 @@ module Swmm
           error("options.#{key}", "unknown option (valid: #{section.spec.keys.join(", ")})")
           next
         end
-        token = convert_one(type, v, "options.#{key}")
+        token = convert_one(kind(type, key), v, "options.#{key}")
         token && line("options.#{key}", [key.to_s.upcase.ljust(20), token])
       end || []
     end
 
     def render_text(name, _section, value)
-      lines = Array(value).flat_map { _1.to_s.split("\n") }
+      lines = Array(value).each_with_index.flat_map { |l, i| (convert_one(:utf8, l.to_s, "title[#{i}]") || "").split("\n") }
       error(name.to_s, "SWMM keeps at most 3 title lines") if lines.size > 3
       lines.each_with_index { |l, i| error("title[#{i}]", "must not start with ;") if l.lstrip.start_with?(";") }
       lines.each_with_index.map { |l, i| line("title[#{i}]", [l], tokenized: false) }
@@ -233,11 +251,11 @@ module Swmm
         keys_check(item, %i[name points file], path)
         id = name_of(item, path) or next []
         if item[:file]
-          file = convert_one(:id, item[:file], "#{path}.file")
+          file = convert_one(:label, item[:file], "#{path}.file")
           next file ? [line(path, [id, "FILE", file])] : []
         end
         points(item[:points], path).filter_map do |t, v, p|
-          stamp = convert_stamp(t, "#{p}[0]")
+          stamp = convert_one(:stamp, t, "#{p}[0]")
           val = convert_one(:num, v, "#{p}[1]")
           line(p, [id, *stamp, val]) if stamp && val
         end
@@ -299,19 +317,21 @@ module Swmm
     # rule Hashes or raw lines
     def render_controls(name, _section, items)
       each_item(name, items).flat_map do |item, path|
-        next [line(path, [item])] if item.is_a?(String)
+        next [line(path, [convert_one(:utf8, item, path)])] if item.is_a?(String)
 
         item = symbolize(item, path) or next []
         keys_check(item, %i[name if then else priority], path)
-        id = name_of(item, path)
+        id = name_of(item, path, :name, :label) # a rule name is a label
         conds, thens = Array(item[:if]), Array(item[:then])
         error("#{path}.if", "needs at least one condition") if conds.empty?
         error("#{path}.then", "needs at least one action") if thens.empty?
         next [] unless id
 
         clause = lambda do |kw, key, list|
-          list.each_with_index.map do |c, i|
-            line("#{path}.#{key}[#{i}]", ["  #{i.zero? ? "#{kw} #{c}" : (c.to_s.match?(/\A\s*(AND|OR)\b/i) ? c.to_s : "AND #{c}")}"])
+          list.each_with_index.filter_map do |c, i|
+            p = "#{path}.#{key}[#{i}]"
+            c = convert_one(:utf8, c.to_s, p) or next
+            line(p, ["  #{i.zero? ? "#{kw} #{c}" : (c.match?(/\A\s*(AND|OR)\b/i) ? c : "AND #{c}")}"])
           end
         end
         [line("#{path}.name", ["RULE #{id}"]), *clause.("IF", :if, conds), *clause.("THEN", :then, thens),
@@ -329,6 +349,7 @@ module Swmm
         end
         next error(path, "unknown key (valid: #{[*Schema::REPORT_FLAGS, *Schema::REPORT_OBJECTS].join(", ")})") && [] unless Schema::REPORT_OBJECTS.include?(key)
 
+        v = convert_one(:utf8, v, path) or next [] if v.is_a?(String)
         if v.to_s.match?(/\A(ALL|NONE)\z/i)
           [line(path, [key.to_s.upcase, v.to_s.upcase])]
         elsif v.is_a?(Array) && v.any?
@@ -342,10 +363,10 @@ module Swmm
 
     # ---- helpers ------------------------------------------------------------------------------------
 
-    def name_of(item, path, key = :name)
+    def name_of(item, path, key = :name, type = :id)
       return error("#{path}.#{key}", "is required") && nil if item[key].nil?
 
-      convert_one(:id, item[key], "#{path}.#{key}")
+      convert_one(type, item[key], "#{path}.#{key}")
     end
 
     def keys_check(item, valid, path)
@@ -362,13 +383,6 @@ module Swmm
         p = "#{path}.#{key}[#{i}]"
         pt.is_a?(Array) && pt.size == 2 ? [*pt, p] : error(p, "must be a [x, y] pair") && nil
       end
-    end
-
-    def convert_stamp(value, path)
-      Types.stamp(value)
-    rescue ArgumentError => e
-      error(path, e.message)
-      nil
     end
   end
 end

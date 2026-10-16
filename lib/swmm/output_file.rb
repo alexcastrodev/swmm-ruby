@@ -74,7 +74,7 @@ module Swmm
     end
 
     def times
-      @times ||= Array.new(@periods) { |p| EPOCH + (@bytes.unpack1("E", offset: period_offset(p)) * 86_400).round }
+      @times ||= Array.new(@periods) { |p| date_at(period_offset(p)) }
     end
 
     # Values of one variable for one object, one per period (aligned with #times).
@@ -155,10 +155,20 @@ module Swmm
       @variables = KINDS.to_h { |kind| [kind, variable_names(kind, ints(ints(1).first))] }
       raise OutputFormatError, "output file is truncated" if @cursor + 12 > b.bytesize
 
-      @start = EPOCH + (b.unpack1("E", offset: @cursor) * 86_400).round
+      @start = date_at(@cursor)
       @report_step = b.unpack1("l<", offset: @cursor + 8)
       @cursor += 12
       layout_check(n_sub, n_node, n_link)
+      # ponytail: O(periods) unpack of every date at construction, so #times never meets a NaN; fine at hundreds of thousands of periods
+      @periods.times { |p| date_at(period_offset(p)) }
+    end
+
+    # a SWMM date (float64 days) as a Time; NaN / Infinity cannot be one
+    def date_at(offset)
+      seconds = @bytes.unpack1("E", offset: offset) * 86_400
+      raise OutputFormatError, "output file is corrupted: date #{seconds / 86_400} is not finite" unless seconds.finite?
+
+      EPOCH + seconds.round
     end
 
     def layout_check(n_sub, n_node, n_link)
@@ -177,7 +187,9 @@ module Swmm
 
     def variable_names(kind, codes)
       fixed = VARIABLES[kind]
-      codes.map { |c| c < fixed.size ? fixed[c] : "quality:#{@pollutants.fetch(c - fixed.size)}" }
+      raise OutputFormatError, "output file is corrupted: invalid #{kind} variable codes #{codes.first(5)}" unless codes.uniq == codes && codes.all? { _1.between?(0, fixed.size + @pollutants.size - 1) }
+
+      codes.map { |c| c < fixed.size ? fixed[c] : "quality:#{@pollutants[c - fixed.size]}" }
     end
 
     # Counts and lengths come from the file: check them against the bytes left BEFORE allocating (a 2**31-1 count

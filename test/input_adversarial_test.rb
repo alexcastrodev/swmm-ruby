@@ -224,7 +224,6 @@ class InputAdversarialTest < Minitest::Test
   end
 
   def test_nul_is_rejected_in_ids_and_expressions
-    skip "BUG: NUL is accepted inside ids/text; the engine stops reading the line there (drops later values) - types.rb:9" unless ENV["SWMM_SHOW_BUGS"]
     refute_empty errors(inflows: [{ node: "J1", series: "Q\0x", scale_factor: 2 }])
     refute_empty errors(junctions: [{ name: "J\0x", elevation: 1 }])
     refute_empty errors(gwf: [{ subcatchment: "S", flow: "LATERAL", expression: "1\0" }])
@@ -232,15 +231,15 @@ class InputAdversarialTest < Minitest::Test
 
   # ---- scalars -----------------------------------------------------------------------------------------------------
 
-  # Current behaviour, acceptable: ASCII whitespace (and NUL) at the ends is stripped; inner ASCII whitespace makes
-  # the id quoted; Unicode spaces are ordinary characters for both Ruby's \s and the engine's " \t\n\r", so they stay
+  # Current behaviour, acceptable: ASCII whitespace at the ends is stripped; inner ASCII whitespace is rejected in
+  # identifiers (the engine's counting pass ignores quotes) and quoted in labels and paths; Unicode spaces are ordinary characters for both Ruby's \s and the engine's " \t\n\r", so they stay
   # inside an unquoted token (two ids that look the same may differ).
   def test_whitespace_in_ids
     t = Swmm::Types
     assert_equal "J1", t.id(" \tJ1\n ")
-    assert_equal "J1", t.id("\0J1\0")
-    assert_equal %("a\tb"), t.id("a\tb")
-    assert_equal %("a\vb"), t.id("a\vb")
+    assert_raises(ArgumentError, "NUL is rejected before the strip can swallow it") { t.id("\0J1\0") }
+    assert_equal %("a\tb"), t.label("a\tb"), "labels, paths and tags are quoted"
+    ["a\tb", "a\vb", "a b"].each { |v| assert_raises(ArgumentError, v.inspect) { t.id(v) } }
     ["J 1", " J1", "J1 ", "　", "J x", "J\u0085x"].each { assert_equal _1, t.id(_1) }
     assert_raises(ArgumentError) { t.id(" \t ") }
     assert_equal '""', t.opt_id("")
@@ -314,7 +313,6 @@ class InputAdversarialTest < Minitest::Test
   # Strings from File.binread / an HTTP body are BINARY; Latin-1 and UTF-16 strings exist too. Today several reach
   # code outside convert_one's `rescue ArgumentError` (input.rb:44, 59, 70, 87, 162, 310, 327; types.rb:27).
   def test_strings_in_other_encodings_are_reported_not_raised
-    skip "BUG: validate raises Encoding::CompatibilityError/ArgumentError for binary, Latin-1, UTF-16 or invalid UTF-8 strings" unless ENV["SWMM_SHOW_BUGS"]
     latin1 = "Po\xE7o".dup.force_encoding("ISO-8859-1")
     cases = {
       "binary + UTF-8 rows" => { junctions: [{ name: "\xFF".b, elevation: 1 }, { name: "Poço", elevation: 1 }] },
@@ -346,9 +344,8 @@ class InputAdversarialTest < Minitest::Test
 
   # JSON allows {"junctions": [...], "JUNCTIONS": [...]}; symbolize (input.rb:59) keeps only the last one.
   def test_keys_that_differ_only_in_case_do_not_lose_data
-    skip "BUG: keys equal after downcase are merged silently, the earlier section/column is dropped - input.rb:59" unless ENV["SWMM_SHOW_BUGS"]
     m = { junctions: [{ name: "A", elevation: 1 }], "JUNCTIONS" => [{ name: "B", elevation: 2 }] }
-    assert(errors(m).any? || (inp(m).include?("A 1") && inp(m).include?("B 2")), inp(m))
+    refute_empty errors(m), "two sections for one name"
     row = { junctions: [{ name: "A", "NAME" => "B", elevation: 1 }] }
     refute_empty errors(row), "two names for one row"
   end
@@ -497,11 +494,13 @@ class InputAdversarialEngineTest < Minitest::Test
   # counted as '"J' and then looked up as 'J 1'. The contract quotes such names (types.rb:29, input_test) but the
   # engine can never define them; it fails with ERROR 209 on every line that uses the name.
   def test_names_with_blanks_can_be_used
-    skip "BUG: names with blanks are quoted and accepted, but the engine cannot define them (ERROR 209) - types.rb:29" unless ENV["SWMM_SHOW_BUGS"]
     b = Fixtures.base
     m = b.merge(junctions: [b[:junctions][0].merge(name: "J 1"), b[:junctions][1]],
                 conduits: [b[:conduits][0].merge(from_node: "J 1"), b[:conduits][1]], inflows: [{ node: "J 1", series: "Q" }])
-    assert(Swmm::Input.validate(m).any? || run_model(m).ok?, run_model(m).error.inspect)
+    return refute_empty(Swmm::Input.validate(m)) if Swmm::Input.validate(m).any? # rejected at the cause
+
+    result = run_model(m)
+    assert result.ok?, result.error.inspect
   end
 
   # Typed Hash rows only: a 521-character (1032-byte) junction line passes the contract; fgets splits it after
@@ -533,7 +532,6 @@ class InputAdversarialEngineTest < Minitest::Test
 
   # NUL ends the C string: "J1 FLOW Q\0x FLOW 1.0 2.0 0" is read as "J1 FLOW Q", so scale_factor 2 is ignored.
   def test_nul_does_not_drop_the_rest_of_the_line
-    skip "BUG: NUL inside an id makes the engine ignore the rest of the line (scale_factor 2 silently becomes 1) - types.rb:9" unless ENV["SWMM_SHOW_BUGS"]
     scaled = Fixtures.base.merge(inflows: [{ node: "J1", series: "Q", scale_factor: 2 }])
     with_nul = Fixtures.base.merge(inflows: [{ node: "J1", series: "Q\0x", scale_factor: 2 }])
     return refute_empty(Swmm::Input.validate(with_nul)) if Swmm::Input.validate(with_nul).any?
@@ -562,7 +560,7 @@ class InputAdversarialEngineTest < Minitest::Test
       "unicode-space id" => [b.merge(junctions: [b[:junctions][0].merge(name: nbsp), b[:junctions][1]],
                                      conduits: [b[:conduits][0].merge(from_node: nbsp), b[:conduits][1]], inflows: [{ node: nbsp, series: "Q" }]), 0],
       "Latin-1 id alone" => [base_plus(junctions: [{ name: "Po\xE7o".dup.force_encoding("ISO-8859-1"), elevation: 1 }]), 0],
-      "binary id alone" => [base_plus(junctions: [{ name: "\xFF".b, elevation: 1 }]), 0],
+      "binary id alone" => [base_plus(junctions: [{ name: "Po\xC3\xA7o".b, elevation: 1 }]), 0],
       "elevation 1e308" => [base_plus(junctions: [{ name: "J9", elevation: 1e308 }]), nil],
       "barrels 2**40" => [b.merge(xsections: [b[:xsections][0].merge(barrels: 2**40), b[:xsections][1]]), 200],
       "start_time 99:99" => [b.merge(options: b[:options].merge(start_time: "99:99")), nil],
