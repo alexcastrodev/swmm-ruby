@@ -1,6 +1,6 @@
 # Bugs conhecidos
 
-A gem usa o **motor oficial da EPA, SWMM 5.2.4, sem alterações** (`rake swmm:build` baixa e compila o código da EPA). Dois defeitos desse motor têm causa raiz identificada e **não são corrigidos pela gem, por decisão do projeto**: ficam documentados aqui, com o jeito de reconhecê-los e de contorná-los. Os dois fazem o motor terminar "com sucesso" (`result.ok? == true`) entregando dados errados, sem aviso.
+A gem usa o **motor oficial da EPA, SWMM 5.2.4, sem alterações** (`rake swmm:build` baixa e compila o código da EPA). Três defeitos desse motor têm causa raiz identificada e **não são corrigidos pela gem, por decisão do projeto**: ficam documentados aqui, com o jeito de reconhecê-los e de contorná-los. Os dois primeiros fazem o motor terminar "com sucesso" (`result.ok? == true`) entregando dados errados, sem aviso.
 
 Estado do upstream verificado em 2026-10-16: a última release da EPA é a v5.2.4 (2023-10-10) e nenhum dos dois defeitos está corrigido nela, no `develop` nem no `master`.
 
@@ -56,6 +56,18 @@ Com ela: 0 erros em 1800 execuções no aarch64 e em 600 no x86_64, todas iguais
 **Upstream.** Não encontrei nenhuma issue nem PR (buscas por `imelt`, "snow uninitialized", "snow valgrind"); `snow_initSnowpack` não inicializa o `imelt` na v5.2.4, em `develop`, `master`, `bug_fixes`, `perf_imprv` e no fork OpenWaterAnalytics.
 
 **Outro defeito latente no mesmo arquivo.** `sba[]` e `sbws[]` também não são inicializados. Só são lidos depois de um `USE HOTSTART` (que restaura `awe` mas não os dois). O valor certo é uma escolha de modelagem; não foi investigado mais.
+
+## 3. `realpath` com buffer menor que `PATH_MAX` (aborta em builds com `_FORTIFY_SOURCE`)
+
+**Sintoma.** `swmm_open` (e por isso `swmm_run` e o `swmm5` de linha de comando) aborta com `*** buffer overflow detected ***: terminated` (SIGABRT) **quando o caminho do arquivo `.inp` é relativo**, por exemplo `swmm_run("modelo.inp", "modelo.rpt", "modelo.out")`, numa `libswmm5` compilada com `_FORTIFY_SOURCE`, que é o padrão do GCC no Ubuntu. Sem essa proteção o erro não aparece, mas a memória é escrita além do buffer se o caminho resolvido tiver mais de 259 caracteres. Com caminho absoluto não acontece.
+
+**Causa.** `swmm5.c`, `getAbsolutePath`: `realpath(fname, absPath)` com `absPath` apontando para `InpDir[MAXFNAME+1]` (260 bytes). O POSIX exige que o destino de `realpath` tenha no mínimo `PATH_MAX` (4096 bytes). O `__realpath_chk` do glibc aborta ao ver o buffer menor. Reproduzido no Ubuntu 24.04 (gcc 13, glibc 2.39, `_FORTIFY_SOURCE=3`), com backtrace `swmm_run -> swmm_open -> getAbsolutePath -> __realpath_chk`; o mesmo código compilado em Debian (sem fortify por padrão) roda.
+
+**Na gem.** Não é afetada: `Swmm.run` sempre passa caminhos absolutos ao motor (`File.expand_path` e diretórios temporários).
+
+**Como reconhecer / contorno.** Se o seu código chamar a C API direto, passe o caminho do `.inp` absoluto. Não há correção aqui.
+
+**Upstream.** Não pesquisei se já existe issue; é um achado de passagem, ao testar a branch do item 1 e 2 no Ubuntu. O erro apareceu primeiro como falha de um teste meu que usava caminho relativo.
 
 ## Como reproduzir
 
