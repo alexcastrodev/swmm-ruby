@@ -103,7 +103,7 @@ Para arquivos gerados pela interface do SWMM, pelo `swmm5` de linha de comando o
 results = Swmm.run_many([modelo_a, modelo_b, "modelo_c.inp"], workers: 8)   # => [Result, Result, Result], na ordem da entrada
 ```
 
-Cada worker é uma thread com a sua própria cópia do arquivo da lib (o motor tem estado global; a 5.2.4 não tem API reentrante). Valida todos os contratos antes de rodar qualquer um, usa só arquivos temporários (para `dir:` use `Swmm.run`) e exige a lib como arquivo (`SWMM_LIB` ou `rake swmm:build`). Dentro de **uma** simulação não há paralelismo.
+Cada worker é uma thread com a sua própria cópia do arquivo da lib (o motor tem estado global; a 5.2.4 não tem API reentrante). Levanta `ArgumentError` se `workers` for menor que 1 ou se a entrada não for uma lista (um Hash de modelo sozinho não é). Valida todos os contratos antes de rodar qualquer um, se um worker levanta exceção os outros param e a exceção chega a quem chamou, usa só arquivos temporários (para `dir:` use `Swmm.run`) e exige a lib como arquivo (`SWMM_LIB` ou `rake swmm:build`). Dentro de **uma** simulação não há paralelismo.
 
 `to_h` e `to_csv` leem saídas grandes (a partir de 250 mil valores por tipo) em Ractors; para ajustar ou desligar: `Swmm::OutputFile.ractors = 1`, `Swmm::OutputFile.parallel_from = ...`.
 

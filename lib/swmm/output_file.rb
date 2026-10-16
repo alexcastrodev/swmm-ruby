@@ -54,7 +54,28 @@ module Swmm
 
       # float32 -> readable Float (0.1f0 reads back as 0.10000000149; keep the 7 digits that mean something)
       def clean(x) = x.finite? ? format("%.7g", x).to_f : nil
+
+      # Ruby 4.0 still prints "Ractor API is experimental" on the first Ractor; a library should not write that to the user's
+      # stderr. The flag is process-wide, so overlapping calls (threads) share one save/restore: the first in saves it, the
+      # last out puts it back.
+      def without_experimental_warning
+        @quiet.synchronize do
+          @quiet_depth += 1
+          @quiet_was = Warning[:experimental] if @quiet_depth == 1
+          Warning[:experimental] = false
+        end
+        begin
+          yield
+        ensure
+          @quiet.synchronize do
+            @quiet_depth -= 1
+            Warning[:experimental] = @quiet_was if @quiet_depth.zero?
+          end
+        end
+      end
     end
+    @quiet = Mutex.new
+    @quiet_depth = 0
     self.ractors = [Etc.nprocessors, 6].min
     self.parallel_from = 250_000
 
@@ -240,13 +261,6 @@ module Swmm
       ractors.flat_map(&:value).map(&:dup)
     end
 
-    # Ruby 4.0 still prints "Ractor API is experimental" on the first Ractor; a library should not write that to the user's stderr.
-    def without_experimental_warning
-      was = Warning[:experimental]
-      Warning[:experimental] = false
-      yield
-    ensure
-      Warning[:experimental] = was
-    end
+    def without_experimental_warning(&) = self.class.without_experimental_warning(&)
   end
 end

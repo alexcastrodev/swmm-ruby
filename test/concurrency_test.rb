@@ -177,7 +177,6 @@ class RunManyArgumentsTest < Minitest::Test
   end
 
   def test_zero_workers_is_not_silently_a_list_of_nils
-    skip "BUG: run_many(inputs, workers: 0) starts no thread and silently returns [nil, nil, ...] (lib/swmm.rb:42; Engine.pool(0) is [])"
     out = begin
       Timeout.timeout(10) { Swmm.run_many([Fixtures.base] * 3, workers: 0) }
     rescue ArgumentError
@@ -187,7 +186,6 @@ class RunManyArgumentsTest < Minitest::Test
   end
 
   def test_a_hash_is_not_taken_for_a_list_of_models
-    skip "BUG: run_many(single_model_hash) iterates its [key, value] pairs and returns one 'cannot open input file' result per section (lib/swmm.rb:36)"
     out = begin
       Swmm.run_many(Fixtures.base)
     rescue ArgumentError, TypeError, Swmm::InvalidInput
@@ -197,7 +195,6 @@ class RunManyArgumentsTest < Minitest::Test
   end
 
   def test_nil_elements_are_rejected_like_other_bad_inputs
-    skip "BUG: run_many([nil]) is not validated: nil.to_s expands to the cwd, the engine 'opens' a directory and answers ERROR 191 (lib/swmm.rb:59,63)"
     assert_raises(ArgumentError, TypeError, Swmm::InvalidInput) { Swmm.run_many([nil]) }
   end
 
@@ -252,7 +249,6 @@ class RunManyErrorsTest < Minitest::Test
   end
 
   def test_after_one_worker_fails_the_others_stop_taking_jobs
-    skip "BUG: jobs.close does not drop the queued jobs (Queue#pop still drains a closed queue), so the surviving workers run every remaining simulation after another worker raised (lib/swmm.rb:47-49)"
     total = 40
     count_engine_runs(raise_on: 2) do |calls|
       capture_io do
@@ -263,7 +259,6 @@ class RunManyErrorsTest < Minitest::Test
   end
 
   def test_a_failed_worker_does_not_write_to_stderr
-    skip "BUG: the worker Thread keeps report_on_exception, so the error is printed to stderr as 'terminated with exception' AND re-raised to the caller (lib/swmm.rb:43)"
     count_engine_runs(raise_on: 1) do
       _out, err = capture_io { assert_raises(RuntimeError) { Swmm.run_many([Fixtures.base] * 3, workers: 2) } }
       assert_empty err
@@ -496,7 +491,6 @@ class RactorReadsUnderThreadsTest < Minitest::Test
   end
 
   def test_concurrent_ractor_reads_do_not_lose_the_users_experimental_setting
-    skip "BUG: without_experimental_warning saves/restores the process-global Warning[:experimental] per call; overlapping calls in two threads can leave it false for good (lib/swmm/output_file.rb:212-218)"
     output = Swmm.run(Fixtures.base).output
     was = Warning[:experimental]
     Warning[:experimental] = true
@@ -668,7 +662,6 @@ class FreshProcessTest < Minitest::Test
   # SWMM_LIB handling. The vendor/ build is also a candidate, so the checks compare entry points with each other instead of
   # assuming the vendor file is missing.
   def test_a_bad_swmm_lib_path_gives_the_same_answer_for_run_and_run_many
-    skip "BUG: SWMM_LIB pointing at a file that is not a library: Engine.default (ffi_lib tries every candidate) silently falls back to vendor/ and runs, but Engine.pool picks the first existing file and raises LibraryNotFound (lib/swmm/engine.rb:25,49)"
     Dir.mktmpdir do |tmp|
       fake = File.join(tmp, "libswmm5.fake")
       File.write(fake, "not a library")
@@ -742,7 +735,8 @@ class FreshProcessTest < Minitest::Test
       assert status.success?, err
       message, copies, pool = out.lines.map(&:chomp)
       assert_match(%r{tried /nonexistent/a\.so, /nonexistent/b\.so\)}, message)
-      assert_equal %w[nil []], [copies, pool]
+      assert_equal "nil", copies
+      assert_includes %w[nil []], pool, "no engine was created" # nil: it failed before the pool was touched
       assert_empty Dir.children(tmp)
     end
   end

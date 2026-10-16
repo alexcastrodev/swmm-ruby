@@ -44,9 +44,11 @@ module Swmm
       # same time). Created once and reused; the copies live in a temp dir removed at exit.
       # ponytail: needs the library as a file (not just a system name); no reentrant API in SWMM 5.2.4 to avoid the copies.
       def pool(count)
+        source = default.path # the file that really loaded, as Swmm.run uses it (not just the first candidate that exists)
+        raise LibraryNotFound, library_not_found_message unless File.file?(source)
+
         INIT.synchronize do
           @pool ||= []
-          source = library_candidates.find { File.file?(_1) } or raise LibraryNotFound, library_not_found_message
           # only the creator removes the copies: a forked child inherits this hook and would delete them under its parent
           @copies ||= Dir.mktmpdir("swmm-lib").tap { |dir| owner = Process.pid; at_exit { FileUtils.rm_rf(dir) if Process.pid == owner } }
           while @pool.size < count
@@ -68,12 +70,16 @@ module Swmm
       @lock = Mutex.new
       @lib = Module.new { extend FFI::Library }
       @lib.ffi_lib(libraries)
+      @path = @lib.ffi_libraries.first.name
       # blocking: the GVL is released during each call, so engines on different threads really run in parallel
       FUNCTIONS.each { |name, (args, ret)| @lib.attach_function(name, args, ret, blocking: true) }
       @lib.freeze # after every attach: a frozen FFI module can be used from other Ractors (see the ffi wiki, "Ractors")
     rescue LoadError
       raise LibraryNotFound, self.class.library_not_found_message
     end
+
+    # the library file this engine loaded (a bare name when it came from the system path)
+    attr_reader :path
 
     # "5.2.4"
     def version = Swmm.format_version(@lib.swmm_getVersion)
