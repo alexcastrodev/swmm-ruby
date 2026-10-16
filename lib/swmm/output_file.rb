@@ -145,14 +145,16 @@ module Swmm
 
       @ids = { subcatchments: read_ids(n_sub), nodes: read_ids(n_node), links: read_ids(n_link) }
       @pollutants = read_ids(n_pol)
-      @pollutant_units = @pollutants.zip(read_ints(n_pol).map { POLLUTANT_UNITS[_1] }).to_h
+      @pollutant_units = @pollutants.zip(ints(n_pol).map { POLLUTANT_UNITS[_1] }).to_h
       raise OutputFormatError, "unexpected input block position" unless @cursor == input_pos
 
       # input block: #properties, their codes, then per-object values (4 bytes each, +4 for nodes/links type code)
       @cursor += 8 + (4 * n_sub)
       @cursor += 4 + (4 * 3) + (12 * n_node)
       @cursor += 4 + (4 * 5) + (20 * n_link)
-      @variables = KINDS.to_h { |kind| [kind, variable_names(kind, read_ints(read_ints(1).first))] }
+      @variables = KINDS.to_h { |kind| [kind, variable_names(kind, ints(ints(1).first))] }
+      raise OutputFormatError, "output file is truncated" if @cursor + 12 > b.bytesize
+
       @start = EPOCH + (b.unpack1("E", offset: @cursor) * 86_400).round
       @report_step = b.unpack1("l<", offset: @cursor + 8)
       @cursor += 12
@@ -178,6 +180,15 @@ module Swmm
       codes.map { |c| c < fixed.size ? fixed[c] : "quality:#{@pollutants.fetch(c - fixed.size)}" }
     end
 
+    # Counts and lengths come from the file: check them against the bytes left BEFORE allocating (a 2**31-1 count
+    # would make unpack build billions of nils). Every int32 read goes through here.
+    def ints(n)
+      fits!(n)
+      read_ints(n)
+    end
+
+    def fits!(n) = n.between?(0, (@bytes.bytesize - @cursor) / 4) || raise(OutputFormatError, "output file is corrupted: #{n} values do not fit in the file")
+
     def read_ints(n)
       values = @bytes.unpack("l<#{n}", offset: @cursor)
       @cursor += 4 * n
@@ -185,8 +196,11 @@ module Swmm
     end
 
     def read_ids(n)
+      fits!(n) # each id takes at least its 4-byte length
       Array.new(n) do
-        len = read_ints(1).first
+        len = ints(1).first
+        raise OutputFormatError, "output file is corrupted: id of #{len} bytes does not fit in the file" unless len.between?(0, @bytes.bytesize - @cursor)
+
         name = @bytes.byteslice(@cursor, len).force_encoding(Encoding::UTF_8).scrub
         @cursor += len
         name

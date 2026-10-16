@@ -157,12 +157,10 @@ class InputAdversarialTest < Minitest::Test
   # ---- R1: structure injection -----------------------------------------------------------------------------------
 
   # The core invariant: whatever the contract accepts, the engine must see exactly the sections the generator wrote.
-  # Today a name that starts with "[" (quoted or not) is a section header for the engine: it is silently dropped
-  # (test_section_header_names_change_the_model_silently), the following rows land in another section, or the
-  # process dies (test_quoted_section_header_name_kills_the_process). Fix: reject a leading "[" in Types.word
-  # (types.rb:27) and line breaks/"[" in controls and title lines (input.rb:299, 310, 164).
+  # A name that starts with "[" (quoted or not) is a section header for the engine: it used to be silently dropped, to
+  # re-route the following rows into another section, or to kill the process. Types.word now rejects a leading "["
+  # and Input#line rejects line breaks, NUL and "[" in every written line (controls, rule clauses and titles too).
   def test_no_accepted_value_changes_the_sections_the_engine_sees
-    skip "BUG: ids/raw tokens/control lines starting with [ (or holding line breaks) are accepted and become section headers" unless ENV["SWMM_SHOW_BUGS"]
     payloads = ["[OUTFALLS]", "[JUNCTIONS] x", "x\n[OUTFALLS]", "x\r[OUTFALLS]"]
     bad = Slots.all.flat_map do |label, _type, model|
       payloads.filter_map do |p|
@@ -186,29 +184,26 @@ class InputAdversarialTest < Minitest::Test
   end
 
   def test_rule_clauses_and_raw_control_lines_cannot_carry_structure
-    skip "BUG: controls raw Strings and rule if/then/else are written unchecked (line breaks, leading [, ;) - input.rb:299,310" unless ENV["SWMM_SHOW_BUGS"]
     rule = { name: "R", if: ["NODE J1 DEPTH > 1"], then: ["CONDUIT C1 STATUS = OPEN"] }
     { "raw line with a line break" => { controls: ["VARIABLE x = NODE J1 DEPTH\n[JUNCTIONS]\nJ9 3"] },
       "raw line that is a header" => { controls: ["[JUNCTIONS]", "J9 3"] },
       "then with a line break" => { controls: [rule.merge(then: ["CONDUIT C1 STATUS = OPEN\n[JUNCTIONS]\nJ9 3"])] },
       "if with a line break" => { controls: [rule.merge(if: ["NODE J1 DEPTH > 1\r\n[JUNCTIONS]"])] },
       "else with NUL" => { controls: [rule.merge(else: ["CONDUIT C1 STATUS = CLOSED\0x"])] } }.each do |label, m|
-      refute_empty errors(m), "#{label} must be rejected; it writes #{inp(m).inspect}"
+      refute_empty errors(m), "#{label} must be rejected"
     end
   end
 
   def test_title_lines_cannot_carry_structure
-    skip "BUG: title lines are not length-checked and may hold CR/NUL; a 1024-char title injects a section - input.rb:161" unless ENV["SWMM_SHOW_BUGS"]
     ["T" * 1023 + "[JUNCTIONS]", "a\rb", "a\0b"].each do |line|
       m = { title: [line, "J10 3"] }
-      refute_empty errors(m), "title #{line[0, 20].inspect}...: engine view #{EngineView.violations(m)}"
+      refute_empty errors(m), -> { "title #{line[0, 20].inspect}...: engine view #{EngineView.violations(m)}" }
     end
   end
 
-  # MAX_LINE is a byte limit (fgets), but Input#line counts characters (input.rb:71). A 521-character line of 1032
-  # bytes passes, the engine reads it as two lines and creates a junction "0" nobody wrote (see the engine test).
+  # MAX_LINE is a byte limit (fgets). Input#line used to count characters: a 521-character line of 1031 bytes passed,
+  # the engine read it as two lines and created a junction nobody wrote (see the engine test).
   def test_the_line_limit_is_counted_in_bytes
-    skip "BUG: line length is checked in characters, the engine limit is 1023 bytes - input.rb:71" unless ENV["SWMM_SHOW_BUGS"]
     m = { junctions: [{ name: "é" * 510, elevation: 10 }] }
     assert_equal ["junctions[0]"], errors(m).map { _1[:path] }, "engine view: #{EngineView.violations(m) if errors(m).empty?}"
   end
@@ -457,7 +452,6 @@ class InputAdversarialEngineTest < Minitest::Test
   def base_plus(**extra) = Fixtures.base.tap { |m| extra.each { |s, rows| m[s] = (m[s] || []) + rows } }
 
   def test_section_header_names_change_the_model_silently
-    skip "BUG: a junction named [JUNCTIONS]/[OUTFALLS] passes the contract, the engine reads it as a header and drops the node" unless ENV["SWMM_SHOW_BUGS"]
     %w[[JUNCTIONS] [OUTFALLS]].each do |name|
       m = base_plus(junctions: [{ name: name, elevation: 1 }])
       next refute_empty(Swmm::Input.validate(m)) if Swmm::Input.validate(m).any?
@@ -467,20 +461,23 @@ class InputAdversarialEngineTest < Minitest::Test
     end
   end
 
-  # The reproduction from the test plan: in the middle of [JUNCTIONS] the same name re-routes the next rows into
-  # [OUTFALLS] and the run fails with the generic 200 (ERROR 205 on J2), far from the cause.
-  def test_section_header_name_before_other_rows_fails_far_from_the_cause
+  # The reproduction from the test plan: in the middle of [JUNCTIONS] the same name re-routed the next rows into
+  # [OUTFALLS] and the run failed with the generic 200 (ERROR 205 on J2), far from the cause. Now the contract names it.
+  def test_section_header_name_before_other_rows_is_rejected_at_the_cause
     m = Fixtures.base.merge(junctions: [Fixtures.base[:junctions][0], { name: "[OUTFALLS]", elevation: 1 }, Fixtures.base[:junctions][1]])
-    assert_empty Swmm::Input.validate(m), "current behaviour: accepted (see the BUG tests)"
-    result = run_model(m)
-    assert_equal 200, result.error[:code]
-    assert_match(/ERROR 205: invalid keyword 3 at line \d+ of \[OUTFALL\] section: J2/, result.error[:details].first)
+    assert_equal [{ path: "junctions[1].name", message: %(must not start with "[") }], Swmm::Input.validate(m)
+    assert_raises(Swmm::InvalidInput) { Swmm.run(m) }
+  end
+
+  # Any leading "[" is refused, not only the known section names: the engine reads the line as a header anyway.
+  def test_a_name_that_starts_with_a_bracket_is_rejected_even_when_it_is_not_a_known_section
+    m = base_plus(junctions: [{ name: "[FOO]", elevation: 1 }])
+    assert_equal [{ path: "junctions[2].name", message: %(must not start with "[") }], Swmm::Input.validate(m)
   end
 
   # Pass 1 (strtok) reads the quoted name as the object '"[JUNCTIONS]', pass 2 (getTokens) as a header: the object
   # counts disagree and libswmm5 dereferences NULL in swmm_open/output_open. SIGSEGV takes the whole Ruby process.
   def test_quoted_section_header_name_does_not_kill_the_process
-    skip "BUG: a name like \"[JUNCTIONS] x\" passes the contract and segfaults libswmm5 (SIGSEGV kills Ruby)" unless ENV["SWMM_SHOW_BUGS"]
     {
       "junction [JUNCTIONS] x" => base_plus(junctions: [{ name: "[JUNCTIONS] x", elevation: 1 }]),
       "junction [OUTFALLS]<tab>x" => base_plus(junctions: [{ name: "[OUTFALLS]\tx", elevation: 1 }]),
@@ -510,28 +507,26 @@ class InputAdversarialEngineTest < Minitest::Test
   # Typed Hash rows only: a 521-character (1032-byte) junction line passes the contract; fgets splits it after
   # 1023 bytes and the tail " 0 0 0 0" becomes a junction named "0". Run is "ok".
   def test_a_multibyte_line_is_not_split_into_two_objects
-    skip "BUG: a line under 1023 characters but over 1023 bytes is split by the engine into two objects - input.rb:71" unless ENV["SWMM_SHOW_BUGS"]
     name = "é" * 510
     m = base_plus(junctions: [{ name: name, elevation: 10 }])
-    next_ok = Swmm::Input.validate(m).any? || run_model(m).ids(:nodes).sort == ["J1", "J2", "O1", name].sort
-    assert next_ok, "nodes: #{run_model(m).ids(:nodes).map { _1.size > 10 ? "#{_1[0, 3]}…" : _1 }}"
+    return refute_empty(Swmm::Input.validate(m)) if Swmm::Input.validate(m).any? # the contract counts bytes now
+
+    nodes = run_model(m).ids(:nodes)
+    assert_equal ["J1", "J2", "O1", name].sort, nodes.sort, "nodes: #{nodes.map { _1.size > 10 ? "#{_1[0, 3]}…" : _1 }}"
   end
 
   # The same split with a raw Array row places any row the caller wants: J10 appears from one J9 row.
   def test_a_raw_row_cannot_smuggle_a_second_row
-    skip "BUG: a raw row padded with multibyte text past 1023 bytes injects a second object (J10) - input.rb:71" unless ENV["SWMM_SHOW_BUGS"]
     m = base_plus(junctions: [["J9", 5, 0, 0, 0, 0, "é" * 505, "J10", 3]])
     assert(Swmm::Input.validate(m).any? || !run_model(m).ids(:nodes).include?("J10"), "J10 was created")
   end
 
   def test_a_title_cannot_smuggle_a_section
-    skip "BUG: a 1023-char title line followed by [JUNCTIONS] injects the next title line as a junction - input.rb:161" unless ENV["SWMM_SHOW_BUGS"]
     m = Fixtures.base.merge(title: ["T" * 1023 + "[JUNCTIONS]", "J10 3"])
     assert(Swmm::Input.validate(m).any? || !run_model(m).ids(:nodes).include?("J10"), "J10 was created")
   end
 
   def test_a_control_action_cannot_smuggle_a_section
-    skip "BUG: a line break inside a rule action injects rows into another section (J12) - input.rb:310" unless ENV["SWMM_SHOW_BUGS"]
     m = Fixtures.base.merge(controls: [{ name: "R", if: ["NODE J1 DEPTH > 100"], then: ["CONDUIT C1 STATUS = OPEN\n[JUNCTIONS]\nJ12 3"] }])
     assert(Swmm::Input.validate(m).any? || !run_model(m).ids(:nodes).include?("J12"), "J12 was created")
   end
@@ -571,7 +566,6 @@ class InputAdversarialEngineTest < Minitest::Test
       "elevation 1e308" => [base_plus(junctions: [{ name: "J9", elevation: 1e308 }]), nil],
       "barrels 2**40" => [b.merge(xsections: [b[:xsections][0].merge(barrels: 2**40), b[:xsections][1]]), 200],
       "start_time 99:99" => [b.merge(options: b[:options].merge(start_time: "99:99")), nil],
-      "unknown header as a name" => [base_plus(junctions: [{ name: "[FOO]", elevation: 1 }]), 200],
       "empty raw row" => [base_plus(junctions: [[]]), 0]
     }
     models.each do |label, (m, code)|

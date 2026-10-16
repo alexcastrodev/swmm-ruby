@@ -23,6 +23,12 @@ class ConformanceTest < Minitest::Test
     end
   end
 
+  # See Fixtures.full: with a snowpack in use the numbers are not reproducible on Linux, so this only checks that the
+  # engine accepts the input (it does, in both outcomes).
+  def test_a_subcatchment_using_a_snowpack_is_accepted
+    Dir.mktmpdir { |dir| assert_runs(Fixtures.full(dir, snow: true), "full model with the snowpack in use") }
+  end
+
   def test_outfall_types
     {
       "FREE" => {}, "NORMAL" => {}, "FIXED" => { stage_data: 9.1 }, "TIDAL" => { stage_data: "TIDE" }, "TIMESERIES" => { stage_data: "STG" }

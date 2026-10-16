@@ -60,32 +60,33 @@ Regras para quem testa:
 
 ## 6. Resultados (2026-10-16)
 
-Suíte: **194 execuções, 30 217 asserts, 0 falhas, 37 pulados**, em macOS arm64, Linux aarch64 (Docker) e Linux x86_64 (Debian 13), Ruby 4.0.7. Os 37 pulados são todos `skip "BUG: …"` (A 17, B 11, D 8, C 1): cada um guarda a reprodução de um defeito e foi visto falhando ao remover o `skip`. Nos testes de A, `SWMM_SHOW_BUGS=1` os executa.
+Suíte: **196 execuções, 30 260 asserts, 0 falhas, 22 pulados**, em macOS arm64, Linux aarch64 (Docker) e Linux x86_64 (Debian 13), Ruby 4.0.7. Os 22 pulados são todos `skip "BUG: …"` (A 7, B 6, D 8, C 1): cada um guarda a reprodução de um defeito ainda aberto e foi visto falhando ao remover o `skip`. Nos testes de A, `SWMM_SHOW_BUGS=1` os executa. A suíte completa rodou 36 vezes seguidas em Docker, em paralelo e com a CPU saturada, sem falha intermitente.
 
 | frente | arquivo | testes | defeitos reproduzidos |
 |---|---|---|---|
-| A — entrada | `input_adversarial_test.rb` | 31 | 12 (4 altos) |
-| B — `.out` hostil | `output_fuzz_test.rb` | 22 | 9 (1 alto) |
+| A — entrada | `input_adversarial_test.rb` | 32 | 12 (4 altos, **corrigidos**) |
+| B — `.out` hostil | `output_fuzz_test.rb` | 22 | 9 (1 alto, **corrigido**) |
 | C — fidelidade | `fidelity_test.rb` | 39 | 1 + 2 comportamentos do motor |
 | D — concorrência | `concurrency_test.rb` | 51 | 8 (1 médio) |
 
 Fidelidade: todos os valores lidos do `.out` coincidem com três oráculos independentes (o `Example1.out` e os números de `test_output.cpp` da EPA, as tabelas do relatório do motor e `swmm_getSavedValue`): 10 692 valores do exemplo da EPA, 516 de `Fixtures.base` e 4 488 de `Fixtures.full`, sem divergência. A afirmação sobre a `libswmm-output` agora tem teste (R3).
 
-Defeitos, por prioridade (ainda não corrigidos; decisão do dono do projeto antes de mexer em `lib/`). Os marcados † foram reproduzidos também pelo líder do teste.
+Defeitos, por prioridade. IN-1 a IN-4 e OUT-1 foram **corrigidos** em 2026-10-16 (validação de entrada em `types.rb`/`input.rb`; checagem de tamanho no leitor `output_file.rb`) e reverificados com os mesmos casos; os demais seguem abertos, cada um com seu teste `skip "BUG: …"`. Os marcados † foram reproduzidos também pelo líder do teste.
 
 | id | sev. | resumo | onde |
 |---|---|---|---|
-| IN-1 † | alta | nome entre aspas que começa com cabeçalho de seção (`"[JUNCTIONS] x"`) passa na validação e derruba o processo (SIGSEGV, saída 139) | `types.rb` `word` |
-| IN-2 † | alta | nome que começa com `[` remove um objeto em silêncio (`ok`, mas o nó some) | `types.rb` |
-| IN-3 † | alta | limite de 1023 conta caracteres, o motor conta bytes: o motor corta a linha e cria um objeto que ninguém escreveu | `input.rb` |
-| IN-4 † | alta | quebras de linha e cabeçalhos entram por `controls`, ações de regra e título (criam nós) | `input.rb` |
-| OUT-1 † | alta | contagem corrompida no cabeçalho do `.out`: a memória cresce com o valor (29 → 403 MB com 1 M → 50 M; 2³¹−1 pede GB) e termina em `IndexError`; vale também para `Swmm.read` | `output_file.rb` `read_ints` |
+| IN-1 † ✔ | alta | nome entre aspas que começa com cabeçalho de seção (`"[JUNCTIONS] x"`) passa na validação e derruba o processo (SIGSEGV, saída 139) | `types.rb` `word` |
+| IN-2 † ✔ | alta | nome que começa com `[` remove um objeto em silêncio (`ok`, mas o nó some) | `types.rb` |
+| IN-3 † ✔ | alta | limite de 1023 conta caracteres, o motor conta bytes: o motor corta a linha e cria um objeto que ninguém escreveu | `input.rb` |
+| IN-4 † ✔ | alta | quebras de linha e cabeçalhos entram por `controls`, ações de regra e título (criam nós) | `input.rb` |
+| OUT-1 † ✔ | alta | contagem corrompida no cabeçalho do `.out`: a memória cresce com o valor (29 → 403 MB com 1 M → 50 M; 2³¹−1 pede GB) e termina em `IndexError`; vale também para `Swmm.read` | `output_file.rb` `read_ints` |
 | IN-5 | média | nomes com espaço nunca funcionam (o motor ignora aspas na primeira passada) | `types.rb` |
 | IN-6 | média | NUL aceito em ids; o motor corta a linha ali (fator de escala ignorado em silêncio) | `types.rb` |
 | IN-7 | média | `validate` levanta (em vez de listar erros) com strings binárias, UTF-16 ou UTF-8 inválido | `input.rb`, `types.rb` |
 | IN-8 | média | chaves que diferem só na caixa (`junctions`/`JUNCTIONS`) perdem dados em silêncio | `input.rb` |
 | OUT-2..7 | média | `OutputFile.new` levanta `ArgumentError`, `NoMethodError`, `IndexError` ou `FloatDomainError` em vez de `OutputFormatError` (contagens/ids/códigos de variável/datas inválidos); códigos de variável negativos são aceitos com nomes errados | `output_file.rb` |
 | D-1 | média | um filho criado com `fork` apaga as cópias da lib do pai ao sair (`at_exit` herdado); o `run_many` seguinte falha com `ENOENT` | `engine.rb` |
+| MOTOR-2 † | média | **o motor não é determinístico em Linux** quando um subcatchment usa um snowpack: ~1,5% das execuções saem diferentes (continuidade de runoff `NaN`, runoff do S1 zerado, routing 6,4177 em vez de 5,966). 1200 execuções no macOS: sempre iguais; Linux aarch64 e x86_64: sim. Só o uso do snowpack dispara (0 de 800 com o snowpack definido e sem uso; a remoção por arado não importa). Fez um teste da suíte falhar de forma intermitente; o `Fixtures.full` não usa mais o snowpack e um teste próprio só confere que o motor aceita a entrada | libswmm5 |
 | MOTOR-1 † | média | o motor às vezes não salva o último período (16 de 60 datas aleatórias; igual ao `swmm_run` puro); `Result` não avisa | libswmm5 |
 | IN-9..12, OUT-8/9, D-2..8, C-1 | baixa | `workers: 0` devolve `[nil, nil, nil]`; os outros workers não param após uma exceção; exceção impressa e relançada; `run_many(hash)` itera pares; `nil`/`""` não validados; corrida em `Warning[:experimental]`; `SWMM_LIB` inválido tratado diferente em `run` e `run_many`; Symbol com formato de data; inteiro enorme aceito; arrays muito aninhados (bug do Ruby); `OutputFile.new(nil)`; códigos de unidade negativos; `continuity` com ruído de float32 | vários |
 

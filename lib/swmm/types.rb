@@ -25,6 +25,7 @@ module Swmm
 
       s = v.to_s.strip
       raise ArgumentError, %(must not contain ", ; or line breaks) if s.match?(BAD_CHARS)
+      raise ArgumentError, %(must not start with "[") if s.start_with?("[") # the engine reads it as a section header, quoted or not
 
       s.empty? || s.match?(/\s/) ? %("#{s}") : s
     end

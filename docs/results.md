@@ -72,6 +72,12 @@ Alternativas de `clean` descartadas (mesmo resultado que `format("%.7g")` exigid
 
 Em Ractors: o módulo FFI precisa ser criado e congelado na Ractor principal (`FFI::Library` criada dentro de um Ractor levanta `Ractor::IsolationError`); `Fiddle` não funciona em Ractors; o Ruby 4.0.7 ainda imprime "Ractor API is experimental" (suprimido em volta do `Ractor.new`).
 
+## Determinismo do motor em Linux
+
+Um modelo com um subcatchment que usa um snowpack deu resultados diferentes entre execuções idênticas em Linux. 150 execuções por contêiner (6 contêineres, aarch64 e x86_64): de 0 a 4 saem no segundo modo, sempre o mesmo (continuidade de runoff `NaN`, runoff do S1 máximo 0,0, routing 6,4177 em vez de 5,966, qualidade −51,13 em vez de −50,64). No macOS nativo, 4 processos × 300 execuções: todas iguais.
+
+Bissecção (400 a 800 execuções por variante, Linux): todas as variantes ficaram entre 0,5% e 2,3% de resultados diferentes (6 a 14 em 400 ou 800), exceto as que tiram o uso do snowpack pelo S1 (0 de 400 sem snowpack, 0 de 400 sem a série de temperatura e o snowpack, 0 de 800 com o snowpack definido e sem uso). Remover só a remoção por arado, ou mandar a neve removida para fora, não mudou a taxa. O comportamento sugere memória não inicializada, que o `malloc` do glibc expõe; não foi investigado no código do motor.
+
 ## Qualidade do modelo
 
 Três modelos propositalmente instáveis terminaram sem erro (`ok? == true`) com erro de continuidade de −258 %, −111 % e −47 % e links apontados em "Highest Flow Instability Indexes" (índices de 43, 23, 21…). Por isso o `Result` expõe `continuity_ok?` e `flow_instability`. O limite de 5 % é uma meta prática de documentação de fornecedores (Bentley, GeoSWMM), não uma regra da EPA; não há limite definido para o índice de instabilidade.

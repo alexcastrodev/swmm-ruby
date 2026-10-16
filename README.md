@@ -112,7 +112,8 @@ Cada worker é uma thread com a sua própria cópia do arquivo da lib (o motor t
 - **`ok?` só diz que o motor terminou**, não que o modelo é bom: um modelo instável termina sem erro. Confira `continuity_ok?` e `flow_instability`.
 - **`[REPORT]` decide o que é gravado**: só subcatchments, nós e condutas listados (`"ALL"` ou ids) entram em `output`; o sistema sempre entra. Sem isso, `result.ids(:nodes)` fica vazio.
 - Caminhos relativos em `files` e `timeseries file` são resolvidos pelo motor a partir da pasta do `.inp`; com `Swmm.run(hash)` use caminhos absolutos.
-- O motor lê no máximo 40 itens e 1023 caracteres por linha e descarta o resto em silêncio; o contrato recusa linhas assim.
+- O motor lê no máximo 40 itens e 1023 **bytes** por linha e descarta o resto em silêncio; o contrato recusa linhas assim. Também recusa nomes e linhas que começam com `[` (o motor leria como início de seção) e qualquer texto com quebra de linha ou NUL.
+- **Em Linux, a `libswmm5` 5.2.4 não é determinística** para um modelo em que um subcatchment usa um snowpack: em ~1,5% das execuções o resultado sai diferente (continuidade de runoff `NaN`, runoff zerado). Não apareceu no macOS. `continuity_ok?` devolve `false` nesses casos.
 - O `.out` inteiro fica em memória. Um crash dentro da lib C derruba o processo.
 
 ## Testes

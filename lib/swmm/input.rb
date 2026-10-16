@@ -66,11 +66,14 @@ module Swmm
       nil
     end
 
-    def line(path, tokens)
+    # Every line written to the file goes through here (free text too): the engine reads it with fgets, so the limit is in bytes.
+    def line(path, tokens, tokenized: true)
       s = tokens.join(" ")
-      error(path, "line is #{s.size} characters; SWMM reads at most #{MAX_LINE}") if s.size > MAX_LINE
+      error(path, "must not contain line breaks or NUL") if s.match?(/[\0\r\n]/)
+      error(path, %(must not start with "[")) if s.lstrip.start_with?("[")
+      error(path, "line is #{s.bytesize} #{s.ascii_only? ? "characters" : "bytes"}; SWMM reads at most #{MAX_LINE}") if s.bytesize > MAX_LINE
       n = s.scan(/"[^"]*"|\S+/).size
-      error(path, "line has #{n} items; SWMM reads at most #{MAX_TOKENS}") if n > MAX_TOKENS
+      error(path, "line has #{n} items; SWMM reads at most #{MAX_TOKENS}") if tokenized && n > MAX_TOKENS
       s
     end
 
@@ -161,8 +164,8 @@ module Swmm
     def render_text(name, _section, value)
       lines = Array(value).flat_map { _1.to_s.split("\n") }
       error(name.to_s, "SWMM keeps at most 3 title lines") if lines.size > 3
-      lines.each_with_index { |l, i| error("title[#{i}]", "must not start with [ or ;") if l.lstrip.start_with?("[", ";") }
-      lines
+      lines.each_with_index { |l, i| error("title[#{i}]", "must not start with ;") if l.lstrip.start_with?(";") }
+      lines.each_with_index.map { |l, i| line("title[#{i}]", [l], tokenized: false) }
     end
 
     # { key => value }: each key is a keyword line. value: true (bare), scalar/Array (positional) or Hash (named)
@@ -296,7 +299,7 @@ module Swmm
     # rule Hashes or raw lines
     def render_controls(name, _section, items)
       each_item(name, items).flat_map do |item, path|
-        next [item.to_s] if item.is_a?(String)
+        next [line(path, [item])] if item.is_a?(String)
 
         item = symbolize(item, path) or next []
         keys_check(item, %i[name if then else priority], path)
@@ -306,11 +309,13 @@ module Swmm
         error("#{path}.then", "needs at least one action") if thens.empty?
         next [] unless id
 
-        clause = lambda do |kw, list|
-          list.each_with_index.map { |c, i| i.zero? ? "#{kw} #{c}" : (c.to_s.match?(/\A\s*(AND|OR)\b/i) ? c.to_s : "AND #{c}") }
+        clause = lambda do |kw, key, list|
+          list.each_with_index.map do |c, i|
+            line("#{path}.#{key}[#{i}]", ["  #{i.zero? ? "#{kw} #{c}" : (c.to_s.match?(/\A\s*(AND|OR)\b/i) ? c.to_s : "AND #{c}")}"])
+          end
         end
-        ["RULE #{id}", *clause.("IF", conds).map { "  #{_1}" }, *clause.("THEN", thens).map { "  #{_1}" },
-         *(item[:else] ? clause.("ELSE", Array(item[:else])).map { "  #{_1}" } : []),
+        [line("#{path}.name", ["RULE #{id}"]), *clause.("IF", :if, conds), *clause.("THEN", :then, thens),
+         *(item[:else] ? clause.("ELSE", :else, Array(item[:else])) : []),
          *(item[:priority] ? ["  PRIORITY #{convert_one(:num, item[:priority], "#{path}.priority")}"] : []), ""]
       end
     end

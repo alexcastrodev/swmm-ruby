@@ -127,7 +127,6 @@ class OutputFuzzSyntheticTest < Minitest::Test
   end
 
   def test_header_only_file_of_the_minimum_size_raises_format_error
-    skip "BUG: a 52-byte file with both magics and zero counts raises ArgumentError (offset outside of string) in OutputFile#read_ints"
     header = [MAGIC, 52_004, 4, 0, 0, 0, 0].pack("l<7")
     [28, 52].each do |output_pos|
       bytes = header + [28, 28, output_pos, 0, 0, MAGIC].pack("l<6")
@@ -290,7 +289,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_swmm_read_of_a_corrupted_out_raises_format_error
-    skip "BUG: Swmm.read hands on-disk .out bytes to OutputFile.new, so a bad id length surfaces as NoMethodError (#read_ids)"
     Dir.mktmpdir do |dir|
       files = Swmm.run(Fixtures.base, dir: dir).files
       File.binwrite(files[:out], i32(File.binread(files[:out]), 28, -1))
@@ -312,7 +310,6 @@ class OutputFuzzTest < Minitest::Test
   # --- BUG: kept as reproductions -------------------------------------------------------------------------------
 
   def test_huge_variable_count_is_rejected_without_allocating
-    skip "BUG: a variable count of 2**31-1 makes OutputFile#read_ints unpack ~2**31 nils (5 GB RSS, ~4 s) before an IndexError"
     each_file do |name, bytes, at|
       at[:var_counts].each_with_index do |offset, k|
         assert_empty check([["#{name} var_count#{k}=2**31-1", i32(bytes, offset, (2**31) - 1)]], readers: false).first
@@ -321,7 +318,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_object_counts_out_of_range_raise_format_error
-    skip "BUG: negative object counts raise ArgumentError (negative array size, #read_ids); huge ones ArgumentError (offset outside of string, #read_ints)"
     cases = []
     each_file do |name, bytes, at|
       %i[n_sub n_node n_link n_pol].each { |f| INT_EXTREMES.each { |v| cases << ["#{name} #{f}=#{v}", i32(bytes, at[f], v)] } }
@@ -330,7 +326,6 @@ class OutputFuzzTest < Minitest::Test
   end
 
   def test_id_length_prefixes_out_of_range_raise_format_error
-    skip "BUG: id length -1 raises NoMethodError (force_encoding for nil, #read_ids); 0 or past the end ArgumentError (#read_ints)"
     cases = []
     each_file do |name, bytes, at|
       [at[:id_lens].first, at[:id_lens].last].each do |offset|

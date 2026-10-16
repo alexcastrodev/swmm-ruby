@@ -23,7 +23,10 @@ module Fixtures
   MONTHS = [1] * 12
 
   # Uses every section of the contract. +dir+ receives the hotstart file.
-  def full(dir)
+  # snow: true makes S1 use the snowpack. On Linux libswmm5 5.2.4 is not deterministic for a model where a subcatchment uses
+  # a snowpack (about 1.5 % of the runs end with NaN runoff continuity and S1 runoff 0; macOS never did in 1200 runs; a
+  # snowpack that is defined but unused is fine), so only a test that does not compare numbers may ask for it.
+  def full(dir, snow: false)
     {
       title: ["Contract conformance model", "uses every section"],
       options: {
@@ -53,7 +56,7 @@ module Fixtures
         infil: [{ subcatchment: "S1", pattern: "PM" }]
       },
       subcatchments: [
-        { name: "S1", raingage: "RG1", outlet: "J1", area: 2, pct_imperv: 60, width: 150, slope: 1, snowpack: "SP1" },
+        { name: "S1", raingage: "RG1", outlet: "J1", area: 2, pct_imperv: 60, width: 150, slope: 1 }.merge(snow ? { snowpack: "SP1" } : {}),
         { name: "S2", raingage: "RG1", outlet: "J2", area: 3, pct_imperv: 30, width: 200, slope: 2, curb_length: 100 },
         { name: "S3", raingage: "RG1", outlet: "S2", area: 1, pct_imperv: 10, width: 80, slope: 2 }
       ],
