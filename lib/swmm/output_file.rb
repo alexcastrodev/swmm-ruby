@@ -43,6 +43,15 @@ module Swmm
         Array.new(periods) { |p| bytes.unpack("e#{width}", offset: offset + (p * stride)) }.transpose.each { |col| col.map! { clean(_1) } }
       end
 
+      # CSV rows "stamp,id,v1,..,vn\n" of the +periods+ range (time-major, then object). A period record already holds a kind
+      # object-major, variable-minor, which is row order: no transpose. Pure and constant-free, like read_columns.
+      def csv_rows(bytes, offset, stride, periods, nvars, ids, stamps)
+        periods.map do |p|
+          rows = bytes.unpack("e#{ids.size * nvars}", offset: offset + (p * stride)).map! { clean(_1) }.each_slice(nvars)
+          ids.zip(rows).map { |id, vals| "#{stamps[p]},#{id},#{vals.join(",")}\n" }.join
+        end.join
+      end
+
       # float32 -> readable Float (0.1f0 reads back as 0.10000000149; keep the 7 digits that mean something)
       def clean(x) = x.finite? ? format("%.7g", x).to_f : nil
     end
@@ -50,6 +59,12 @@ module Swmm
     self.parallel_from = 250_000
 
     attr_reader :flow_units, :periods, :report_step, :start, :ids, :variables, :pollutants
+
+    # error code the engine stored in the file's epilogue (0 = the run finished)
+    attr_reader :engine_error
+
+    # "5.2.4": the engine version that wrote the file
+    def engine_version = Swmm.format_version(@version)
 
     # ponytail: the whole .out stays in memory (fine up to a few hundred MB); switch to IO seeks beyond that.
     # Values are read little-endian, as the engine writes them on x86/arm64.
@@ -81,6 +96,24 @@ module Swmm
       ids.each_with_index.to_h do |id, i|
         [id, names.each_with_index.to_h { |name, v| [name, columns[(i * names.size) + v] || []] }]
       end
+    end
+
+    # Rows of Result#to_csv: +ids+ are the (already quoted) id fields of the kind, +stamps+ one String per period.
+    # Big outputs are split by period across Ractors, all reading the same frozen bytes.
+    def csv_rows(kind, ids, stamps)
+      nvars = @variables.fetch(kind).size
+      offset = @output_pos + 8 + (4 * @base.fetch(kind))
+      workers = self.class.ractors
+      return self.class.csv_rows(@bytes, offset, @period_bytes, 0...@periods, nvars, ids, stamps) if workers <= 1 || ids.size * nvars * @periods < self.class.parallel_from
+
+      Ractor.make_shareable(@bytes)
+      per = (@periods / workers.to_f).ceil
+      ractors = without_experimental_warning do
+        (0...@periods).step(per).map do |first|
+          Ractor.new(@bytes, offset, @period_bytes, first...[first + per, @periods].min, nvars, ids, stamps) { |*args| OutputFile.csv_rows(*args) }
+        end
+      end
+      ractors.map(&:value).join
     end
 
     # { "depth" => "m", ... } per kind

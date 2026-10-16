@@ -52,6 +52,9 @@ module Swmm
     results
   end
 
+  # Result from files SWMM already wrote (rpt:, out:), without running the engine: see Result.from_files.
+  def self.read(rpt:, out: nil) = Result.from_files(rpt: rpt, out: out)
+
   def self.validate(data) = Input.validate(data)
 
   def self.version = Engine.version

@@ -18,6 +18,41 @@ module Swmm
   class Result
     attr_reader :version, :error, :warnings, :continuity, :flow_instability, :files, :report, :output
 
+    # A Result from files SWMM already wrote (the GUI, the swmm5 CLI or Swmm.run(dir:)); neither the engine nor the library is used.
+    # rpt: is required. out: may be nil or missing when the run failed before writing it. The .inp is not needed.
+    # What the files alone can say: the version comes from the .out (or the report banner); the error code from the .out
+    # epilogue, or from the report when there is no .out (input errors, 2xx, are 200 as the engine reports them); the
+    # continuity errors from the report's "Continuity Error (%)" lines (3 decimals; a block the report does not print is 0.0).
+    def self.from_files(rpt:, out: nil)
+      report = File.binread(rpt).force_encoding(Encoding::UTF_8).scrub
+      output = OutputFile.new(File.binread(out)) if out && File.exist?(out)
+      code = output ? output.engine_error : error_code_of(report)
+      raise ArgumentError, "out file not found: #{out} (and the report shows no error)" if out && !output && code.zero?
+
+      raw = { code: code, message: code.zero? ? "" : error_message_of(report, code), continuity: (continuity_of(report) if code.zero?) }
+      new(version: output&.engine_version || report[/Build (\d+\.\d+\.\d+)/, 1], raw: raw, report: report,
+          output: (output if code.zero?), files: { inp: nil, rpt: File.expand_path(rpt), out: out && File.expand_path(out) })
+    end
+
+    # Input errors (2xx, with their line context) make the engine return 200, which the report never prints.
+    def self.error_code_of(report)
+      codes = report.scan(/^\s*ERROR (\d+):/).flatten.map(&:to_i)
+      codes.any? { _1.between?(200, 299) } ? 200 : codes.first.to_i
+    end
+
+    def self.error_message_of(report, code)
+      report[/^\s*(ERROR #{code}:.*)$/, 1]&.strip || (code == 200 ? "ERROR 200: one or more errors in input file." : "ERROR #{code}")
+    end
+
+    # Like swmm_getMassBalErr: quality is the pollutant error with the largest absolute value (signed).
+    def self.continuity_of(report)
+      error = lambda do |title|
+        report[/#{title}.*?Continuity Error \(%\) \.+([^\n]*)/m, 1].to_s.split.map(&:to_f).max_by(&:abs) || 0.0
+      end
+      { runoff: error.("Runoff Quantity Continuity"), flow_routing: error.("Flow Routing Continuity"), quality: error.("Quality Routing Continuity") }
+    end
+    private_class_method :error_code_of, :error_message_of, :continuity_of
+
     # raw: Engine.run result; report: text of the .rpt; output: OutputFile | nil; files: { inp:, rpt:, out: } | nil
     def initialize(version:, raw:, report:, output:, files:)
       @version = version
@@ -56,11 +91,8 @@ module Swmm
 
     def to_csv(kind)
       kind = kind.to_sym
-      vars = variables(kind)
-      stamps = times.map { _1.strftime("%Y-%m-%dT%H:%M:%S") }
-      per_id = output.all_series(kind).to_h { |id, cols| [csv_field(id), cols.values_at(*vars).transpose] } # one row per period
-      rows = stamps.each_index.flat_map { |i| per_id.map { |id, table| "#{stamps[i]},#{id},#{table[i].join(",")}" } }
-      (["time,id,#{vars.map { csv_field(_1) }.join(",")}"] + rows).join("\n") << "\n"
+      header = "time,id,#{variables(kind).map { csv_field(_1) }.join(",")}\n"
+      header << output.csv_rows(kind, ids(kind).map { csv_field(_1) }, times.map { iso(_1) })
     end
 
     private

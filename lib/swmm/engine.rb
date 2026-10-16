@@ -75,10 +75,7 @@ module Swmm
     end
 
     # "5.2.4"
-    def version
-      v = @lib.swmm_getVersion
-      "#{v / 10_000}.#{v / 1000 % 10}.#{v % 1000}"
-    end
+    def version = Swmm.format_version(@lib.swmm_getVersion)
 
     # open -> start -> step... -> end -> close, like swmm_run but keeping the continuity errors.
     # Returns { code:, message:, continuity: { runoff:, flow_routing:, quality: } | nil }

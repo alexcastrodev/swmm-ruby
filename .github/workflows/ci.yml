@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SWMM_VERSION: v5.2.4 # the default of `rake swmm:build`
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest] # Linux x86_64 and macOS arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+
+      - name: Install OpenMP (macOS ships a compiler without it)
+        if: runner.os == 'macOS'
+        run: brew install libomp
+
+      - name: Cache libswmm5
+        id: libswmm5
+        uses: actions/cache@v4
+        with:
+          path: vendor/swmm
+          key: libswmm5-${{ runner.os }}-${{ runner.arch }}-${{ env.SWMM_VERSION }}-${{ hashFiles('Rakefile') }}
+
+      - name: Build libswmm5 from the EPA sources
+        if: steps.libswmm5.outputs.cache-hit != 'true'
+        run: bundle exec rake swmm:build
+
+      # Without the library the engine tests skip themselves and the job would stay green.
+      - name: The engine loads
+        run: |
+          bundle exec ruby -Ilib -e '
+            require "swmm"
+            abort "libswmm5 did not load" unless Swmm::Engine.available?
+            puts "libswmm5 #{Swmm.version}"
+          '
+
+      - name: Tests
+        run: bundle exec rake test
