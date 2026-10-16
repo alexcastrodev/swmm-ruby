@@ -114,3 +114,5 @@ rake test      # sem libswmm5, os testes que precisam do motor são pulados
 ```
 
 `test/conformance_test.rb` roda um modelo que usa **todas** as seções e variantes de cada coluna condicional (tipos de exutório, reservatório, divisor, vertedouro, seções transversais…) no motor real.
+
+Em Linux, sem instalar nada: `docker build -t swmm-ruby . && docker run --rm swmm-ruby` (o `Dockerfile` compila a `libswmm5` com `rake swmm:build` e roda a suíte no Ruby 4.0.7).

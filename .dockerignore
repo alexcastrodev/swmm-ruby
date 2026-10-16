@@ -1,0 +1,7 @@
+.git
+.vscode
+.ruby-lsp
+tmp
+vendor
+Gemfile.lock
+*.gem
