@@ -69,7 +69,7 @@ module OutputFuzz
     nil
   end
 
-  # Every public reader of an accepted file. KeyError is only allowed for ids/variables the file does not list.
+  # Every public reader of an accepted file. UnknownObject is only allowed for ids/variables the file does not list.
   def read_everything(out, label, violations)
     Swmm::OutputFile::KINDS.each do |kind|
       ids = kind == :system ? ["system"] : out.ids.fetch(kind)

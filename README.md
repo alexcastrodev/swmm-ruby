@@ -80,7 +80,21 @@ result.to_h  # =>
 }
 ```
 
-Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`.
+Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
+
+### Alagamentos — `node_flooding`
+
+A tabela "Node Flooding Summary" do relatório, um Hash por nó que alagou (`[]` se nenhum alagou):
+
+```ruby
+result.node_flooding  # =>
+[{ node: "J1", hours: 1.76, max_rate: 103.07, max_elapsed: 3600, max_time: 2026-03-24 01:00:00 UTC, volume: 354.0, max_ponded_depth: 0.0 }]
+```
+
+- `max_rate` na unidade de vazão; `volume` na unidade de volume de `units` (m3 ou ft3; o relatório imprime 10^6 L ou 10^6 gal); `max_ponded_depth` em m ou ft.
+- O relatório conta o "days hr:min" do máximo a partir do início do relatório (`REPORT_START`), não do início da simulação: `max_elapsed` são esses segundos e `max_time` é `report_start + max_elapsed` (`nil` sem `.out`).
+- `report_start` não está no relatório: sai do início que o `.out` grava. É exato quando o `REPORT_START` é o início da simulação ou fica um número inteiro de passos de relatório (pelo menos dois) depois dele; nos outros casos os arquivos não o distinguem de um início anterior e `report_start` sai até um passo de relatório mais cedo.
+- `analysis_options` são os valores do bloco "Analysis Options" do relatório: `{ flow_units:, start:, end:, report_step: }` (`nil` para o que o relatório não imprime).
 
 `Swmm.run(model, dir: "tmp/run1")` mantém `model.inp`, `model.rpt` e `model.out`; sem `dir:` ficam num diretório temporário removido ao fim.
 
@@ -95,7 +109,9 @@ Para arquivos gerados pela interface do SWMM, pelo `swmm5` de linha de comando o
 - `rpt:` é obrigatório. `out:` é opcional: uma simulação que falhou antes de gravá-lo vem sem `output`. O `.inp` não é necessário.
 - Versão, erro, avisos, `flow_instability` e as séries saem dos próprios arquivos. O código de erro vem do `.out`; sem `.out`, erros de entrada (2xx) viram `200`, como o motor devolve.
 - `continuity` vem das linhas `Continuity Error (%)` do `.rpt`, com 3 casas decimais (no `Swmm.run` vem do motor, em `float`). Um bloco que o relatório não imprime conta como `0.0`.
-- Arquivo ausente levanta `Errno::ENOENT`; `.out` que não é do SWMM, `Swmm::OutputFormatError`.
+- A versão sai do `.out` ou, sem ele, do cabeçalho do relatório da EPA (`Build 5.2.4`) ou da OWA (`VERSION v5.2.1`).
+- Arquivo ausente levanta `Errno::ENOENT`; `.rpt` que não foi escrito pelo SWMM (sem o cabeçalho `STORM WATER MANAGEMENT MODEL`), `Swmm::ReportFormatError`; `.out` que não é do SWMM, `Swmm::OutputFormatError`.
+- Um `.out` de outra simulação levanta `Swmm::MismatchedFiles`: a unidade de vazão, o passo de relatório, o início e o fim que o relatório imprime têm de bater com o `.out`. Outra execução do mesmo modelo não é distinguível.
 
 ## Várias simulações — `Swmm.run_many`
 
