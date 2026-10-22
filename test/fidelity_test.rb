@@ -481,7 +481,7 @@ class EngineOracleTest < Minitest::Test
       assert_equal %w[J2], oracle.flagged[:nodes], "the engine's own report flags"
       assert_equal %w[J2], Oracle.tables(oracle.report, "Node").keys
       assert_equal %w[C2], Oracle.tables(oracle.report, "Link").keys
-      assert_raises(KeyError) { result.series(:nodes, "J1", :depth) }
+      assert_raises(Swmm::UnknownObject) { result.series(:nodes, "J1", :depth) }
       compare_with_saved(result, oracle)
     end
   end

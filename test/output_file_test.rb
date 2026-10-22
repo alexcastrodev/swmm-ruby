@@ -21,8 +21,14 @@ class OutputFileTest < Minitest::Test
   def test_series_lookups_fail_loudly
     Dir.mktmpdir do |dir|
       out = Swmm::OutputFile.new(File.binread(Swmm.run(Fixtures.base, dir: dir).files[:out]))
-      assert_raises(KeyError) { out.series(:nodes, "nope", :depth) }
-      assert_raises(KeyError) { out.series(:nodes, "J1", :nope) }
+      error = assert_raises(Swmm::UnknownObject) { out.series(:nodes, "nope", :depth) }
+      assert_equal 'nodes has no "nope"', error.message
+      assert_kind_of Swmm::Error, error, "one rescue Swmm::Error covers every reading error"
+      assert_equal "nodes has no variable :nope", assert_raises(Swmm::UnknownObject) { out.series(:nodes, "J1", :nope) }.message
+      assert_equal "unknown kind :pipes (subcatchments, nodes, links, system)", assert_raises(Swmm::UnknownObject) { out.series(:pipes, "J1", :depth) }.message
+      assert_raises(Swmm::UnknownObject) { out.series(nil, "J1", :depth) }
+      assert_raises(Swmm::UnknownObject) { out.all_series(:pipes) }
+      assert_equal out.series(:nodes, "J1", :depth), out.series("nodes", "J1", "depth"), "kinds and variables may be Strings"
     end
   end
 
