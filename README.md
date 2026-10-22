@@ -2,7 +2,7 @@
 
 Roda simulações do **EPA SWMM 5** a partir de Ruby (FFI sobre a `libswmm5`).
 
-- **Entrada:** um modelo SWMM como Hash/JSON (as seções do `.inp` em minúsculas) ou o caminho de um `.inp`; **ou** os arquivos que o SWMM já gerou (`.rpt` e `.out`).
+- **Entrada:** um modelo SWMM como Hash/JSON (as seções do `.inp` em minúsculas) ou o caminho de um `.inp`; **ou** os arquivos que o SWMM já gerou (`.rpt` e `.out`). Um `.inp` também pode ser lido para esse Hash (`Swmm::Input.read`).
 - **Saída:** um `Swmm::Result` com status, erro do motor, avisos, erro de continuidade e todas as séries temporais salvas, exportável para Hash, JSON e CSV.
 
 ```ruby
@@ -53,6 +53,25 @@ Um Hash (ou JSON) cujas chaves são as seções do `.inp` em minúsculas. Cobre 
 - Datas: `Date`/`Time` ou `"2026-03-24"`. Horas: `"HH:MM[:SS]"` ou segundos. `true/false` viram `YES/NO`. Colunas opcionais assumem o padrão do SWMM.
 - Contrato inválido levanta `Swmm::InvalidInput`, com **todos** os erros e o caminho de cada um: `[{path: "junctions[0].elevation", message: "must be a number, got \"x\""}]`.
 - `Swmm.validate(hash)` valida sem rodar; `Swmm::Input.new(hash).to_inp` devolve o `.inp` gerado.
+
+### Lendo um `.inp` — `Swmm::Input.parse` / `Swmm::Input.read`
+
+O caminho inverso: um `.inp` (da interface do SWMM, do `swmm5` ou do próprio `Swmm::Input`) vira o mesmo Hash do contrato, para ler, mudar e rodar de novo. Não usa o motor.
+
+```ruby
+model = Swmm::Input.read("modelo.inp")                         # todas as seções
+model[:junctions]  # => [{ name: "J1", elevation: 120.757, max_depth: 4.213, ... }]
+model[:options][:start_date]  # => #<Date: 2026-03-23>
+Swmm.run(model.merge(options: model[:options].merge(end_time: "06:00")))
+
+Swmm::Input.parse(texto, only: %i[junctions conduits xsections coordinates vertices])  # só essas; as outras nem são lidas
+```
+
+- Lê as linhas como o motor: espaços separam, aspas agrupam, `;` começa comentário; cabeçalhos `[SEÇÃO]` sem diferença de maiúsculas; CRLF, BOM e arquivos em Windows-1252 são aceitos.
+- Valores tipados: números como `Integer`/`Float`, `YES`/`NO` como `true`/`false`, palavras-chave como o schema as lista, datas `MM/DD/YYYY` como `Date`, horas como o texto `"H:MM[:SS]"` (horas decimais viram relógio), nomes e rótulos como `String`.
+- Séries como o motor as lê: a data vale para os próximos tempos da mesma série até outra data; várias entradas por linha; `curves` e `patterns` continuam nas linhas seguintes.
+- Só voltam as seções presentes no arquivo (as vazias ficam de fora). `Swmm::Input.new(model).to_inp` reescreve o modelo, com os padrões do SWMM nas colunas que o arquivo omitiu.
+- Uma linha de tabela que não encaixa nas colunas da seção volta como o Array dos seus tokens (a linha crua do contrato, escrita como veio). O que o contrato não comporta (seção, opção, palavra-chave ou linha de `[REPORT]` desconhecida, tabela malformada) levanta `Swmm::InvalidInput` com todos os problemas e a linha de cada um.
 
 ## Saída — `Swmm::Result`
 
