@@ -1,9 +1,27 @@
 # frozen_string_literal: true
 
 require "date"
+require_relative "types"
+require_relative "schema"
+require_relative "input"
 
 module Swmm
   class Input
+    # .inp text -> the contract Hash Swmm::Input takes (Schema), so that a model written by the SWMM GUI, the swmm5 CLI or
+    # Swmm::Input can be read, changed and run again: Swmm::Input.new(Swmm::Input.parse(text)) writes it back.
+    #
+    #   Swmm::Input.read("model.inp")                                        # every section
+    #   Swmm::Input.parse(text, only: %i[junctions conduits coordinates])    # some; the others are not read at all
+    #
+    # Sections present in the file come back with their lowercase names; empty ones are left out. Values are typed:
+    # numbers as Integer / Float, YES/NO as true / false, keywords in the case Schema lists them, MM/DD/YYYY dates as
+    # Date, clock times as "H:MM[:SS]" text, names and labels as String. A row that does not fit its section's columns is
+    # kept as the Array of its tokens (Input writes such a row as given). What the contract cannot hold (an unknown
+    # section, option, keyword or report line, a malformed table line) raises InvalidInput, with every problem and its line.
+    def self.parse(text, only: nil) = Parser.new(text, only).parse
+
+    def self.read(path, only: nil) = parse(File.binread(path), only: only)
+
     # Reads a .inp the way the engine does (input.c getTokens, table.c, inflow.c, transect.c): blanks separate tokens,
     # double quotes group them, ";" starts a comment; [SECTION] headers are case-insensitive.
     class Parser
@@ -26,7 +44,7 @@ module Swmm
           value = send("read_#{Schema::SECTIONS.fetch(name).kind}", name, Schema::SECTIONS.fetch(name), lines)
           [name, value] unless value.nil? || (value.respond_to?(:empty?) && value.empty?)
         end
-        raise(InvalidInput, @errors.sort_by { it[:path][/line (\d+)\)\z/, 1].to_i }) unless @errors.empty?
+        raise InvalidInput, @errors.sort_by { _1[:path][/line (\d+)\)\z/, 1].to_i } unless @errors.empty?
 
         data.to_h
       end
@@ -61,20 +79,20 @@ module Swmm
 
       def line_of(number, line)
         body = line[/\A(?:[^";]|"[^"]*"?)*/] # up to the first ; outside quotes
-        tokens = body.to_enum(:scan, /"([^"]*)"?|[^\s"]+/).map { Regexp.last_match.then { |match| [match[1] || match[0], match.begin(0)] } }
+        tokens = body.to_enum(:scan, /"([^"]*)"?|[^\s"]+/).map { [$~[1] || $~[0], $~.begin(0)] }
         Line.new(number, body, tokens)
       end
 
       def error(number, path, message) = @errors << { path: "#{path} (line #{number})", message: message }
 
-      def lines_with_tokens(lines) = lines.reject { it.tokens.empty? }
+      def lines_with_tokens(lines) = lines.reject { _1.tokens.empty? }
 
       # ---- values ----------------------------------------------------------------------------------
 
       # +text+ as a value of the column type, nil when it is not one
       def value_of(type, text)
         case type
-        when Array then type.find { it.casecmp?(text) }
+        when Array then type.find { _1.casecmp?(text) }
         when :num then number(text)
         when :int then text.to_i if text.match?(INTEGER)
         when :yn then { "YES" => true, "NO" => false }[text.upcase]
@@ -149,13 +167,13 @@ module Swmm
         row if i == tokens.size
       end
 
-      def active?(col, row) = col.only.nil? || col.only[1].any? { it.casecmp?(row[col.only[0]].to_s) }
+      def active?(col, row) = col.only.nil? || col.only[1].any? { _1.casecmp?(row[col.only[0]].to_s) }
 
-      def count_ok?(spec, count)
+      def count_ok?(spec, n)
         case spec
-        when Range then spec.cover?(count)
-        when Array then spec.include?(count)
-        else spec == count
+        when Range then spec.cover?(n)
+        when Array then spec.include?(n)
+        else spec == n
         end
       end
 
@@ -176,7 +194,7 @@ module Swmm
       end
 
       def read_text(_name, _section, lines)
-        lines.map { it.body.strip }.reject { it.empty? || it.start_with?(";") }.first(MAX_TITLE_LINES)
+        lines.map { _1.body.strip }.reject { _1.empty? || _1.start_with?(";") }.first(MAX_TITLE_LINES)
       end
 
       def read_options(name, section, lines)
@@ -277,21 +295,20 @@ module Swmm
 
       # name TYPE x y [x y ...] on its first line, name x y [x y ...] after
       def read_curves(name, _section, lines)
-        curves = lines_with_tokens(lines).each_with_object({}) do |line, by_id|
+        lines_with_tokens(lines).each_with_object({}) do |line, curves|
           id, *rest = line.tokens.map(&:first)
           path = "#{name}.#{id}"
-          unless by_id.key?(id)
+          unless curves.key?(id)
             type = value_of(Schema::CURVE_TYPES, rest.shift.to_s)
             next error(line.number, path, "needs a curve type (#{Schema::CURVE_TYPES.join(", ")})") unless type
 
-            by_id[id] = { name: id, type: type, points: [] }
+            curves[id] = { name: id, type: type, points: [] }
           end
-          numbers = rest.map { number(it) }
+          numbers = rest.map { number(_1) }
           next error(line.number, path, "needs x y pairs") if numbers.size.odd? || numbers.any?(&:nil?)
 
-          by_id[id][:points].concat(numbers.each_slice(2).to_a)
-        end
-        curves.values.reject { it[:points].empty? }
+          curves[id][:points].concat(numbers.each_slice(2).to_a)
+        end.values.reject { _1[:points].empty? }
       end
 
       # name TYPE factors... on its first line, name factors... after
@@ -305,7 +322,7 @@ module Swmm
 
             patterns[id] = { name: id, type: type, factors: [] }
           end
-          factors = rest.map { number(it) }
+          factors = rest.map { number(_1) }
           next error(line.number, path, "factors must be numbers") if factors.any?(&:nil?)
 
           patterns[id][:factors].concat(factors)
@@ -318,15 +335,17 @@ module Swmm
         manning = nil
         lines_with_tokens(lines).each_with_object([]) do |line, transects|
           word, *rest = line.tokens.map(&:first)
-          numbers = rest.map { number(it) }
+          numbers = rest.map { number(_1) }
           case word.upcase
           when "NC"
             next error(line.number, "#{name}.NC", "needs n_left n_right n_channel") unless numbers.size >= 3 && numbers.first(3).none?(&:nil?)
 
-            manning = MANNING_KEYS.zip(numbers).to_h
+            manning = %i[n_left n_right n_channel].zip(numbers).to_h
           when "X1"
             values = numbers.drop(1)
-            next error(line.number, "#{name}.X1", "needs an NC line before it and name nsta x_left x_right 0 0 0 x_factor y_factor") unless manning && rest.size >= 9 && values.first(8).none?(&:nil?)
+            unless manning && rest.size >= 9 && values.first(8).none?(&:nil?)
+              next error(line.number, "#{name}.X1", "needs an NC line before it and name nsta x_left x_right 0 0 0 x_factor y_factor")
+            end
 
             transects << { name: rest[0], **manning, x_left: values[1], x_right: values[2], x_factor: values[6], y_factor: values[7], stations: [] }
           when "GR"
@@ -340,7 +359,7 @@ module Swmm
       end
 
       # the rule lines as written (Input writes text lines as given)
-      def read_controls(_name, _section, lines) = lines_with_tokens(lines).map { it.body.rstrip }
+      def read_controls(_name, _section, lines) = lines_with_tokens(lines).map { _1.body.rstrip }
 
       # flags => true / false; SUBCATCHMENTS / NODES / LINKS => "ALL", "NONE" or the ids of every line
       def read_report(name, _section, lines)

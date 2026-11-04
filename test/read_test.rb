@@ -81,7 +81,7 @@ class ReadTest < Minitest::Test
     end
   end
 
-  def test_the_worst_moment_of_node_flooding_is_placed_in_time
+  def test_node_flooding_places_the_worst_moment_in_time
     Dir.mktmpdir do |dir|
       ran = Swmm.run(Fixtures.flooded, dir: dir)
       assert_equal Time.utc(2026, 3, 24), ran.report_start, "the simulation start"
@@ -125,15 +125,15 @@ class ReadTest < Minitest::Test
   def test_an_out_of_another_run_is_rejected
     Dir.mktmpdir do |dir|
       ran = Swmm.run(Fixtures.base, dir: File.join(dir, "base"))
-      with = ->(options) { Fixtures.base.then { |base| base.merge(options: base[:options].merge(options)) } }
+      with = ->(options) { Fixtures.base.then { _1.merge(options: _1[:options].merge(options)) } }
       {
-        "report step" => with.call(report_step: "00:05:00"),
-        "flow units" => with.call(flow_units: "CMS"),
-        "start" => with.call(start_date: "2026-03-23", end_date: "2026-03-23")
+        "report step" => with.(report_step: "00:05:00"),
+        "flow units" => with.(flow_units: "CMS"),
+        "start" => with.(start_date: "2026-03-23", end_date: "2026-03-23")
       }.each do |difference, model|
         other = Swmm.run(model, dir: File.join(dir, difference.tr(" ", "_")))
         assert other.ok?, difference
-        error = assert_raises(Swmm::MismatchedFiles) { Swmm.read(rpt: ran.files[:rpt], out: other.files[:out]) }
+        error = assert_raises(Swmm::MismatchedFiles, difference) { Swmm.read(rpt: ran.files[:rpt], out: other.files[:out]) }
         assert_match(/not from the same run: .*#{difference}/, error.message)
       end
       again = Swmm.run(Fixtures.base, dir: File.join(dir, "again"))

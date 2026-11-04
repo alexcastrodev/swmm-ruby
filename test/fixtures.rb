@@ -20,13 +20,6 @@ module Fixtures
     }
   end
 
-  MONTHS = [1] * 12
-
-  # Uses every section of the contract. +dir+ receives the hotstart file.
-  # snow: true makes S1 use the snowpack SP1. Known engine bug (docs/known-issues.md, #2): on Linux libswmm5 5.2.4 reads an
-  # uninitialised variable for a snowpack that has a surface of zero area, and about 2 % of identical runs end with NaN runoff
-  # continuity and S1 runoff 0 (macOS never did; a snowpack that is defined but unused is fine). So only a test that does not
-  # compare numbers may ask for it.
   # base with shallower nodes, a narrower C1 and a larger hydrograph: J1 floods for about 1.8 hours, worst at 01:00.
   # +options+ go into [OPTIONS] (e.g. report_start_time:).
   def flooded(**options)
@@ -38,6 +31,13 @@ module Fixtures
     )
   end
 
+  MONTHS = [1] * 12
+
+  # Uses every section of the contract. +dir+ receives the hotstart file.
+  # snow: true makes S1 use the snowpack SP1. Known engine bug (docs/known-issues.md, #2): on Linux libswmm5 5.2.4 reads an
+  # uninitialised variable for a snowpack that has a surface of zero area, and about 2 % of identical runs end with NaN runoff
+  # continuity and S1 runoff 0 (macOS never did; a snowpack that is defined but unused is fine). So only a test that does not
+  # compare numbers may ask for it.
   def full(dir, snow: false)
     {
       title: ["Contract conformance model", "uses every section"],

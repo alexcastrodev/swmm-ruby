@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "tmpdir"
 
 # Report parsing, without the engine.
 class ResultTest < Minitest::Test
@@ -21,30 +22,6 @@ class ResultTest < Minitest::Test
     *********************************
     Link C8 (7)
   RPT
-
-  def result(report) = Swmm::Result.new(version: "5.2.4", raw: { code: 0, message: "", continuity: { runoff: 0.0, flow_routing: 7.5, quality: 0.0 } }, report: report, output: nil, files: nil)
-
-  def test_flow_instability_is_read_from_its_own_section_only
-    assert_equal({ "C1" => 12, "C 2" => 3 }, result(REPORT).flow_instability)
-    assert_empty result(REPORT.sub(/Link C1.*\n.*\n/, "All links are stable.\n")).flow_instability
-    assert_empty result("").flow_instability
-  end
-
-  def test_continuity_ok_compares_the_worst_error_with_the_tolerance
-    refute result("").continuity_ok?
-    assert result("").continuity_ok?(tolerance: 10)
-  end
-
-  # A run whose continuity is NaN (seen with libswmm5 on Linux when a subcatchment uses a snowpack) still has to export.
-  def test_a_non_finite_continuity_exports_as_null_and_is_never_ok
-    raw = { code: 0, message: "", continuity: { runoff: Float::NAN, flow_routing: 6.4177, quality: Float::INFINITY } }
-    r = Swmm::Result.new(version: "5.2.4", raw: raw, report: "", output: nil, files: nil)
-    assert_predicate r.continuity[:runoff], :nan?, "the accessor keeps the real value"
-    refute r.continuity_ok?
-    refute r.continuity_ok?(tolerance: 100), "NaN is never within a tolerance"
-    assert_equal({ runoff: nil, flow_routing: 6.4177, quality: nil }, r.to_h[:continuity])
-    assert_equal({ "runoff" => nil, "flow_routing" => 6.4177, "quality" => nil }, JSON.parse(r.to_json)["continuity"])
-  end
 
   FLOODING = <<~RPT
     ****************
@@ -78,21 +55,44 @@ class ResultTest < Minitest::Test
     O1                     99.99     88.88      0  00:00       0.111     0.000
   RPT
 
-  def test_node_flooding_is_read_from_the_report_table
-    expected = [
-      { node: "J1", hours: 1.76, max_rate: 103.07, max_elapsed: 3600, max_time: nil, volume: 354.0, max_ponded_depth: 0.0 },
-      { node: "5AVE228", hours: 0.01, max_rate: 10.74, max_elapsed: (2 * 86_400) + (3 * 3600) + (24 * 60), max_time: nil, volume: 0.0, max_ponded_depth: 0.12 }
-    ]
-    assert_equal expected, result(FLOODING).node_flooding, "max_time needs the results (see report_start); the next section is not read"
-    assert_equal expected, result(FLOODING.gsub("\n", "\r\n")).node_flooding, "CRLF reports"
+  def result(report) = Swmm::Result.new(version: "5.2.4", raw: { code: 0, message: "", continuity: { runoff: 0.0, flow_routing: 7.5, quality: 0.0 } }, report: report, output: nil, files: nil)
+
+  def test_flow_instability_is_read_from_its_own_section_only
+    assert_equal({ "C1" => 12, "C 2" => 3 }, result(REPORT).flow_instability)
+    assert_empty result(REPORT.sub(/Link C1.*\n.*\n/, "All links are stable.\n")).flow_instability
+    assert_empty result("").flow_instability
   end
 
-  def test_node_flooding_volumes_are_in_the_unit_system_of_the_run
+  def test_continuity_ok_compares_the_worst_error_with_the_tolerance
+    refute result("").continuity_ok?
+    assert result("").continuity_ok?(tolerance: 10)
+  end
+
+  # A run whose continuity is NaN (seen with libswmm5 on Linux when a subcatchment uses a snowpack) still has to export.
+  def test_a_non_finite_continuity_exports_as_null_and_is_never_ok
+    raw = { code: 0, message: "", continuity: { runoff: Float::NAN, flow_routing: 6.4177, quality: Float::INFINITY } }
+    r = Swmm::Result.new(version: "5.2.4", raw: raw, report: "", output: nil, files: nil)
+    assert_predicate r.continuity[:runoff], :nan?, "the accessor keeps the real value"
+    refute r.continuity_ok?
+    refute r.continuity_ok?(tolerance: 100), "NaN is never within a tolerance"
+    assert_equal({ runoff: nil, flow_routing: 6.4177, quality: nil }, r.to_h[:continuity])
+    assert_equal({ "runoff" => nil, "flow_routing" => 6.4177, "quality" => nil }, JSON.parse(r.to_json)["continuity"])
+  end
+
+  def test_node_flooding_reads_the_report_table
+    assert_equal [
+      { node: "J1", hours: 1.76, max_rate: 103.07, max_elapsed: 3600, max_time: nil, volume: 354.0, max_ponded_depth: 0.0 },
+      { node: "5AVE228", hours: 0.01, max_rate: 10.74, max_elapsed: (2 * 86_400) + (3 * 3600) + (24 * 60), max_time: nil, volume: 0.0, max_ponded_depth: 0.12 }
+    ], result(FLOODING).node_flooding, "max_time needs the results (see report_start); the next section is not read"
+    assert_equal result(FLOODING).node_flooding, result(FLOODING.gsub("\n", "\r\n")).node_flooding, "CRLF reports"
+  end
+
+  def test_node_flooding_volumes_follow_the_unit_system
     us = result(FLOODING.sub("Flow Units ............... LPS", "Flow Units ............... CFS")).node_flooding.first
     assert_equal 47_322.917, us[:volume], "10^6 gal in ft3"
   end
 
-  def test_no_node_flooding_without_flooded_nodes
+  def test_node_flooding_is_empty_without_flooded_nodes
     assert_empty result(FLOODING.sub(/^Flooding refers.*?(?=\n\n\n)/m, "No nodes were flooded.")).node_flooding
     assert_empty result("").node_flooding
   end

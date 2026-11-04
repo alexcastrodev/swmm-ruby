@@ -64,7 +64,7 @@ Regras para quem testa:
 
 ## 6. Resultados (2026-10-16)
 
-Suíte: **203 execuções, 30 523 asserts, 0 falhas, 2 pulados**, em macOS arm64, Linux aarch64 (Docker, 3 rodadas) e Linux x86_64 (Debian 13, 3 rodadas), Ruby 4.0.7, com a `libswmm5` da EPA sem alterações. Os 2 pulados são os dois bugs conhecidos do motor (`KnownEngineBugsTest`, [`known-issues.md`](known-issues.md)): descrevem o comportamento correto e falham com o motor como é lançado; `SWMM_SHOW_BUGS=1` os executa. Depois de `node_flooding`, `Report`, `Variables` e do leitor de `.inp`: **239 execuções, 30 670 asserts, 0 falhas, 2 pulados**, só em macOS arm64 (Ruby 4.0.7). Todos os outros defeitos da lista abaixo foram corrigidos.
+Suíte: **203 execuções, 30 523 asserts, 0 falhas, 2 pulados**, em macOS arm64, Linux aarch64 (Docker, 3 rodadas) e Linux x86_64 (Debian 13, 3 rodadas), Ruby 4.0.7, com a `libswmm5` da EPA sem alterações. Depois de `node_flooding` e das verificações do `Swmm.read` (2026-10-22): **214 execuções, 30 594 asserts, 0 falhas, 2 pulados**; com o leitor de `.inp`: **228 execuções, 30 633 asserts, 0 falhas, 2 pulados**, só em Linux aarch64 (Ruby 4.0.7). Com `Swmm::Report` e `Swmm::Variables`: **239 execuções, 30 678 asserts, 0 falhas, 2 pulados**, só em macOS arm64 (Ruby 4.0.7). Os 2 pulados são os dois bugs conhecidos do motor (`KnownEngineBugsTest`, [`known-issues.md`](known-issues.md)): descrevem o comportamento correto e falham com o motor como é lançado; `SWMM_SHOW_BUGS=1` os executa. Todos os outros defeitos da lista abaixo foram corrigidos.
 
 | frente | arquivo | testes | defeitos reproduzidos |
 |---|---|---|---|
