@@ -21,8 +21,8 @@ class OutputFileTest < Minitest::Test
   def test_series_lookups_fail_loudly
     Dir.mktmpdir do |dir|
       out = Swmm::OutputFile.new(File.binread(Swmm.run(Fixtures.base, dir: dir).files[:out]))
-      assert_raises(KeyError) { out.series(:nodes, "nope", :depth) }
-      assert_raises(KeyError) { out.series(:nodes, "J1", :nope) }
+      assert_raises(Swmm::UnknownObject) { out.series(:nodes, "nope", :depth) }
+      assert_raises(Swmm::UnknownObject) { out.series(:nodes, "J1", :nope) }
     end
   end
 

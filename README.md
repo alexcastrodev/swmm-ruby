@@ -2,7 +2,7 @@
 
 Roda simulações do **EPA SWMM 5** a partir de Ruby (FFI sobre a `libswmm5`).
 
-- **Entrada:** um modelo SWMM como Hash/JSON (as seções do `.inp` em minúsculas) ou o caminho de um `.inp`; **ou** os arquivos que o SWMM já gerou (`.rpt` e `.out`).
+- **Entrada:** um modelo SWMM como Hash/JSON (as seções do `.inp` em minúsculas) ou o caminho de um `.inp`; **ou** os arquivos que o SWMM já gerou (`.rpt` e `.out`). Um `.inp` também pode ser lido para esse Hash (`Swmm::Input.read`).
 - **Saída:** um `Swmm::Result` com status, erro do motor, avisos, erro de continuidade e todas as séries temporais salvas, exportável para Hash, JSON e CSV.
 
 ```ruby
@@ -54,6 +54,25 @@ Um Hash (ou JSON) cujas chaves são as seções do `.inp` em minúsculas. Cobre 
 - Contrato inválido levanta `Swmm::InvalidInput`, com **todos** os erros e o caminho de cada um: `[{path: "junctions[0].elevation", message: "must be a number, got \"x\""}]`.
 - `Swmm.validate(hash)` valida sem rodar; `Swmm::Input.new(hash).to_inp` devolve o `.inp` gerado.
 
+### Lendo um `.inp` — `Swmm::Input.parse` / `Swmm::Input.read`
+
+O caminho inverso: um `.inp` (da interface do SWMM, do `swmm5` ou do próprio `Swmm::Input`) vira o mesmo Hash do contrato, para ler, mudar e rodar de novo. Não usa o motor.
+
+```ruby
+model = Swmm::Input.read("modelo.inp")                         # todas as seções
+model[:junctions]  # => [{ name: "J1", elevation: 120.757, max_depth: 4.213, ... }]
+model[:options][:start_date]  # => #<Date: 2026-03-23>
+Swmm.run(model.merge(options: model[:options].merge(end_time: "06:00")))
+
+Swmm::Input.parse(texto, only: %i[junctions conduits xsections coordinates vertices])  # só essas; as outras nem são lidas
+```
+
+- Lê as linhas como o motor: espaços separam, aspas agrupam, `;` começa comentário; cabeçalhos `[SEÇÃO]` sem diferença de maiúsculas; CRLF, BOM e arquivos em Windows-1252 são aceitos.
+- Valores tipados: números como `Integer`/`Float`, `YES`/`NO` como `true`/`false`, palavras-chave como o schema as lista, datas `MM/DD/YYYY` como `Date`, horas como o texto `"H:MM[:SS]"` (horas decimais viram relógio), nomes e rótulos como `String`.
+- Séries como o motor as lê: a data vale para os próximos tempos da mesma série até outra data; várias entradas por linha; `curves` e `patterns` continuam nas linhas seguintes.
+- Só voltam as seções presentes no arquivo (as vazias ficam de fora). `Swmm::Input.new(model).to_inp` reescreve o modelo, com os padrões do SWMM nas colunas que o arquivo omitiu.
+- Uma linha de tabela que não encaixa nas colunas da seção volta como o Array dos seus tokens (a linha crua do contrato, escrita como veio). O que o contrato não comporta (seção, opção, palavra-chave ou linha de `[REPORT]` desconhecida, tabela malformada) levanta `Swmm::InvalidInput` com todos os problemas e a linha de cada um.
+
 ## Saída — `Swmm::Result`
 
 `Swmm.run` **sempre** devolve um `Result`: erro do motor vem em `result.error`, não como exceção.
@@ -80,7 +99,21 @@ result.to_h  # =>
 }
 ```
 
-Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`.
+Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; as variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
+
+### Alagamentos — `node_flooding`
+
+A tabela "Node Flooding Summary" do relatório, um Hash por nó que alagou (`[]` se nenhum alagou):
+
+```ruby
+result.node_flooding  # =>
+[{ node: "J1", hours: 1.76, max_rate: 103.07, max_elapsed: 3600, max_time: 2026-03-24 01:00:00 UTC, volume: 354.0, max_ponded_depth: 0.0 }]
+```
+
+- `max_rate` na unidade de vazão; `volume` na unidade de volume de `units` (m3 ou ft3; o relatório imprime 10^6 L ou 10^6 gal); `max_ponded_depth` em m ou ft.
+- O relatório conta o "days hr:min" do máximo a partir do início do relatório (`REPORT_START`), não do início da simulação: `max_elapsed` são esses segundos e `max_time` é `report_start + max_elapsed` (`nil` sem `.out`).
+- `report_start` não está no relatório: sai do início que o `.out` grava. É exato quando o `REPORT_START` é o início da simulação ou fica um número inteiro de passos de relatório (pelo menos dois) depois dele; nos outros casos os arquivos não o distinguem de um início anterior e `report_start` sai até um passo de relatório mais cedo.
+- `analysis_options` são os valores do bloco "Analysis Options" do relatório: `{ flow_units:, start:, end:, report_step: }` (`nil` para o que o relatório não imprime).
 
 `Swmm.run(model, dir: "tmp/run1")` mantém `model.inp`, `model.rpt` e `model.out`; sem `dir:` ficam num diretório temporário removido ao fim.
 
@@ -95,7 +128,29 @@ Para arquivos gerados pela interface do SWMM, pelo `swmm5` de linha de comando o
 - `rpt:` é obrigatório. `out:` é opcional: uma simulação que falhou antes de gravá-lo vem sem `output`. O `.inp` não é necessário.
 - Versão, erro, avisos, `flow_instability` e as séries saem dos próprios arquivos. O código de erro vem do `.out`; sem `.out`, erros de entrada (2xx) viram `200`, como o motor devolve.
 - `continuity` vem das linhas `Continuity Error (%)` do `.rpt`, com 3 casas decimais (no `Swmm.run` vem do motor, em `float`). Um bloco que o relatório não imprime conta como `0.0`.
-- Arquivo ausente levanta `Errno::ENOENT`; `.out` que não é do SWMM, `Swmm::OutputFormatError`.
+- A versão sai do `.out` ou, sem ele, do cabeçalho do relatório da EPA (`Build 5.2.4`) ou da OWA (`VERSION v5.2.1`).
+- Arquivo ausente levanta `Errno::ENOENT`; `.rpt` que não foi escrito pelo SWMM (sem o cabeçalho `STORM WATER MANAGEMENT MODEL`), `Swmm::ReportFormatError`; `.out` que não é do SWMM, `Swmm::OutputFormatError`.
+- Um `.out` de outra simulação levanta `Swmm::MismatchedFiles`: a unidade de vazão, o passo de relatório, o início e o fim que o relatório imprime têm de bater com o `.out`. Outra execução do mesmo modelo não é distinguível.
+
+### Só um dos arquivos — `Swmm::Report.read` / `Swmm::OutputFile.read`
+
+Cada arquivo tem o seu contrato; o `Result` junta os dois e acrescenta o que só os dois juntos dizem (o código de erro do motor, que são da mesma execução e o início do relatório, `report_start`).
+
+```ruby
+report = Swmm::Report.read("modelo.rpt")    # não lê o .out (que pode ter centenas de MB)
+report.ok? / error / warnings / continuity / flow_instability / analysis_options / version / to_h
+report.node_flooding                        # max_elapsed; max_time é nil: o relatório não imprime o próprio início
+report.node_flooding(start: result.report_start)   # com max_time, como result.node_flooding
+report.text                                 # o texto do .rpt
+
+output = Swmm::OutputFile.read("modelo.out")
+output.times / ids / variables / series(:links, "C1", :flow) / all_series(:links) / units
+
+result.rpt     # => Swmm::Report        (result.report continua sendo o texto)
+result.output  # => Swmm::OutputFile
+```
+
+`Swmm::Report.read` levanta `Swmm::ReportFormatError` para um arquivo sem o cabeçalho do SWMM; `Swmm::Report.new(texto)` aceita qualquer texto (vazio inclusive). Sem o `.out`, o código de erro sai do relatório (2xx viram `200`).
 
 ## Várias simulações — `Swmm.run_many`
 

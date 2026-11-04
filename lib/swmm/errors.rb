@@ -9,6 +9,15 @@ module Swmm
   # The binary .out file is not in the layout this reader understands.
   class OutputFormatError < Error; end
 
+  # The .rpt given to Swmm.read is not a report SWMM wrote (no "STORM WATER MANAGEMENT MODEL" banner).
+  class ReportFormatError < Error; end
+
+  # The .rpt and the .out given to Swmm.read are not from the same run (flow units, report step, start or end differ).
+  class MismatchedFiles < Error; end
+
+  # A kind, object id or variable the results do not have (series, ids, variables, to_csv).
+  class UnknownObject < Error; end
+
   # Input contract violation. +errors+ is [{path: "junctions[0].elevation", message: "is required"}, ...].
   class InvalidInput < Error
     attr_reader :errors

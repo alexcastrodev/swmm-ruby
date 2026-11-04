@@ -17,7 +17,27 @@ module Swmm
     # Columns that hold a label or a path, not an object name: blanks are quoted (the engine's second pass honours quotes)
     LABELS = %i[path station text tag tempdir file report_file].freeze
 
+    # [TRANSECTS] NC line (Manning's n of the left bank, right bank, channel), X1 bank stations and their default factors
+    MANNING_KEYS = %i[n_left n_right n_channel].freeze
+    BANK_KEYS = %i[x_left x_right].freeze
+    TRANSECT_FACTORS = { x_factor: 1, y_factor: 1 }.freeze
+
     attr_reader :to_inp
+
+    # .inp text -> the contract Hash Swmm::Input takes (Schema), so that a model written by the SWMM GUI, the swmm5 CLI or
+    # Swmm::Input can be read, changed and run again: Swmm::Input.new(Swmm::Input.parse(text)) writes it back.
+    #
+    #   Swmm::Input.read("model.inp")                                        # every section
+    #   Swmm::Input.parse(text, only: %i[junctions conduits coordinates])    # some; the others are not read at all
+    #
+    # Sections present in the file come back with their lowercase names; empty ones are left out. Values are typed:
+    # numbers as Integer / Float, YES/NO as true / false, keywords in the case Schema lists them, MM/DD/YYYY dates as
+    # Date, clock times as "H:MM[:SS]" text, names and labels as String. A row that does not fit its section's columns is
+    # kept as the Array of its tokens (Input writes such a row as given). What the contract cannot hold (an unknown
+    # section, option, keyword or report line, a malformed table line) raises InvalidInput, with every problem and its line.
+    def self.parse(text, only: nil) = Parser.new(text, only).parse
+
+    def self.read(path, only: nil) = parse(File.binread(path), only: only)
 
     # Returns the list of {path:, message:} violations ([] when the data is valid).
     def self.validate(data)
@@ -301,9 +321,9 @@ module Swmm
         item = symbolize(item, path) or next []
         keys_check(item, %i[name n_left n_right n_channel x_left x_right x_factor y_factor stations], path)
         id = name_of(item, path)
-        n = %i[n_left n_right n_channel].map { convert_one(:num, item[_1], "#{path}.#{_1}") }
-        x = %i[x_left x_right].map { convert_one(:num, item[_1], "#{path}.#{_1}") }
-        f = { x_factor: 1, y_factor: 1 }.map { |k, d| convert_one(:num, item.fetch(k, d), "#{path}.#{k}") }
+        n = MANNING_KEYS.map { convert_one(:num, item[_1], "#{path}.#{_1}") }
+        x = BANK_KEYS.map { convert_one(:num, item[_1], "#{path}.#{_1}") }
+        f = TRANSECT_FACTORS.map { |k, d| convert_one(:num, item.fetch(k, d), "#{path}.#{k}") }
         stations = points(item[:stations], path, key: :stations)
         pairs = stations.map { |e, s, p| [convert_one(:num, e, "#{p}[0]"), convert_one(:num, s, "#{p}[1]")] }
         next [] if (n + x + f + pairs.flatten + [id]).any?(&:nil?)

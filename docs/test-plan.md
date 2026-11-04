@@ -13,9 +13,12 @@ Plataformas: macOS arm64, Linux aarch64 (Docker) e Linux x86_64 (glibc). Motor: 
 | `output_file_test.rb` | arquivo inválido/truncado, `series` × `all_series`, leitura em Ractors |
 | `csv_test.rb` | conteúdo do CSV contra oráculo independente, quoting, caminho em Ractors |
 | `ractor_test.rb` | módulo FFI congelado é compartilhável e um Ractor chama o motor |
-| `result_test.rb` | parser do relatório (instabilidade), tolerância de continuidade |
+| `result_test.rb` | parser do relatório (instabilidade, alagamentos, opções de análise), tolerância de continuidade, `kind` desconhecido, `.rpt` que não é do SWMM, versão do cabeçalho EPA/OWA |
 | `known_engine_bugs_test.rb` | os dois bugs conhecidos do motor (`docs/known-issues.md`): janelas que perdem o último período e heap cheio de `0xFF` contra a leitura de memória não inicializada do snowpack, ambos `skip` (`SWMM_SHOW_BUGS=1` os executa); o contorno (terminar 1 segundo depois) roda sempre |
-| `read_test.rb` | `Swmm.read` (`rpt`/`out` → `Result`): igual ao `Swmm.run`, continuidade com poluentes, erro sem `.out`, código de erro no epílogo, só o `.rpt`, arquivos inválidos, sem motor nem lib |
+| `input_parser_test.rb` | `Swmm::Input.parse`/`read`: `.inp` como a interface escreve (comentários, CRLF, BOM, tabs, aspas, linhas curtas, séries com e sem data, continuações), opções tipadas, linha crua quando não encaixa, `only:`, erros com a linha, Windows-1252, ida e volta do contrato inteiro e o mesmo resultado no motor |
+| `report_test.rb` | `Swmm::Report` sem motor nem `.out`: versão, avisos, continuidade, opções da análise, alagamentos com e sem o início do relatório, erros 2xx como 200, relatório vazio, codificação, arquivo que não é do SWMM, e o mesmo conteúdo que o `Result` lê |
+| `variables_test.rb` | `Swmm::Variables` tem uma constante por variável do `.out` (igual a `OutputFile::VARIABLES`), lê a mesma série que o nome e erra com `NameError` para um nome que não existe |
+| `read_test.rb` | `Swmm.read` (`rpt`/`out` → `Result`): igual ao `Swmm.run`, continuidade com poluentes, erro sem `.out`, código de erro no epílogo, só o `.rpt`, arquivos inválidos, `.out` de outra simulação, horário do máximo dos alagamentos com e sem `REPORT_START` (e o limite do `report_start`), sem motor nem lib |
 
 ## 2. Riscos e lacunas
 
@@ -61,7 +64,7 @@ Regras para quem testa:
 
 ## 6. Resultados (2026-10-16)
 
-Suíte: **203 execuções, 30 523 asserts, 0 falhas, 2 pulados**, em macOS arm64, Linux aarch64 (Docker, 3 rodadas) e Linux x86_64 (Debian 13, 3 rodadas), Ruby 4.0.7, com a `libswmm5` da EPA sem alterações. Os 2 pulados são os dois bugs conhecidos do motor (`KnownEngineBugsTest`, [`known-issues.md`](known-issues.md)): descrevem o comportamento correto e falham com o motor como é lançado; `SWMM_SHOW_BUGS=1` os executa. Todos os outros defeitos da lista abaixo foram corrigidos.
+Suíte: **203 execuções, 30 523 asserts, 0 falhas, 2 pulados**, em macOS arm64, Linux aarch64 (Docker, 3 rodadas) e Linux x86_64 (Debian 13, 3 rodadas), Ruby 4.0.7, com a `libswmm5` da EPA sem alterações. Os 2 pulados são os dois bugs conhecidos do motor (`KnownEngineBugsTest`, [`known-issues.md`](known-issues.md)): descrevem o comportamento correto e falham com o motor como é lançado; `SWMM_SHOW_BUGS=1` os executa. Depois de `node_flooding`, `Report`, `Variables` e do leitor de `.inp`: **239 execuções, 30 670 asserts, 0 falhas, 2 pulados**, só em macOS arm64 (Ruby 4.0.7). Todos os outros defeitos da lista abaixo foram corrigidos.
 
 | frente | arquivo | testes | defeitos reproduzidos |
 |---|---|---|---|

@@ -46,6 +46,92 @@ class ResultTest < Minitest::Test
     assert_equal({ "runoff" => nil, "flow_routing" => 6.4177, "quality" => nil }, JSON.parse(r.to_json)["continuity"])
   end
 
+  FLOODING = <<~RPT
+    ****************
+    Analysis Options
+    ****************
+    Flow Units ............... LPS
+    Flow Routing Method ...... DYNWAVE
+    Starting Date ............ 03/24/2026 00:00:00
+    Ending Date .............. 03/24/2026 02:00:00
+    Antecedent Dry Days ...... 0.0
+    Report Time Step ......... 00:10:00
+
+    *********************
+    Node Flooding Summary
+    *********************
+
+    Flooding refers to all water that overflows a node, whether it ponds or not.
+    --------------------------------------------------------------------------
+                                                               Total   Maximum
+                                   Maximum   Time of Max       Flood    Ponded
+                          Hours       Rate    Occurrence      Volume     Depth
+    Node                 Flooded       LPS   days hr:min    10^6 ltr    Meters
+    --------------------------------------------------------------------------
+    J1                      1.76    103.07      0  01:00       0.354     0.000
+    5AVE228                 0.01     10.74      2  03:24       0.000     0.120
+
+
+    ***********************
+    Outfall Loading Summary
+    ***********************
+    O1                     99.99     88.88      0  00:00       0.111     0.000
+  RPT
+
+  def test_node_flooding_is_read_from_the_report_table
+    expected = [
+      { node: "J1", hours: 1.76, max_rate: 103.07, max_elapsed: 3600, max_time: nil, volume: 354.0, max_ponded_depth: 0.0 },
+      { node: "5AVE228", hours: 0.01, max_rate: 10.74, max_elapsed: (2 * 86_400) + (3 * 3600) + (24 * 60), max_time: nil, volume: 0.0, max_ponded_depth: 0.12 }
+    ]
+    assert_equal expected, result(FLOODING).node_flooding, "max_time needs the results (see report_start); the next section is not read"
+    assert_equal expected, result(FLOODING.gsub("\n", "\r\n")).node_flooding, "CRLF reports"
+  end
+
+  def test_node_flooding_volumes_are_in_the_unit_system_of_the_run
+    us = result(FLOODING.sub("Flow Units ............... LPS", "Flow Units ............... CFS")).node_flooding.first
+    assert_equal 47_322.917, us[:volume], "10^6 gal in ft3"
+  end
+
+  def test_no_node_flooding_without_flooded_nodes
+    assert_empty result(FLOODING.sub(/^Flooding refers.*?(?=\n\n\n)/m, "No nodes were flooded.")).node_flooding
+    assert_empty result("").node_flooding
+  end
+
+  def test_analysis_options_are_read_from_the_report
+    assert_equal({ flow_units: "LPS", start: Time.utc(2026, 3, 24), end: Time.utc(2026, 3, 24, 2), report_step: 600 }, result(FLOODING).analysis_options)
+    assert_equal({ flow_units: nil, start: nil, end: nil, report_step: nil }, result("").analysis_options)
+    assert_nil result(FLOODING).report_start, "it needs the start the .out saved"
+  end
+
+  def test_unknown_kinds_are_an_unknown_object
+    assert_equal ["system"], result("").ids(:system), "the system needs no results"
+    assert_equal ["system"], result("").ids("system")
+    assert_raises(Swmm::UnknownObject) { result("").ids(:pipes) }
+    assert_raises(Swmm::UnknownObject) { result("").variables(nil) }
+    assert_raises(Swmm::UnknownObject) { result("").to_csv(:pipes) }
+  end
+
+  def test_read_rejects_a_report_swmm_did_not_write
+    Dir.mktmpdir do |dir|
+      rpt = File.join(dir, "notes.rpt")
+      ["just some text\n", "", FLOODING].each do |text|
+        File.write(rpt, text)
+        error = assert_raises(Swmm::ReportFormatError) { Swmm.read(rpt: rpt) }
+        assert_match(/not a SWMM report/, error.message)
+      end
+    end
+  end
+
+  def test_read_takes_the_version_from_an_owa_banner
+    Dir.mktmpdir do |dir|
+      rpt = File.join(dir, "owa.rpt")
+      File.write(rpt, "\r\n  OWA STORM WATER MANAGEMENT MODEL - VERSION v5.2.1 (OWA 2023-03-28)\r\n#{FLOODING}")
+      assert_equal "5.2.1", Swmm.read(rpt: rpt).version
+      File.write(rpt, "\n  EPA STORM WATER MANAGEMENT MODEL - VERSION 5.2 (Build 5.2.4)\n#{FLOODING}")
+      assert_equal "5.2.4", Swmm.read(rpt: rpt).version
+    end
+  end
+
   def test_a_failed_run_still_exports_a_nil_continuity
     r = Swmm::Result.new(version: "5.2.4", raw: { code: 200, message: "ERROR 200", continuity: nil }, report: "", output: nil, files: nil)
     assert_nil r.to_h[:continuity]

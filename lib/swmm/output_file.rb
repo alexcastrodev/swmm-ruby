@@ -55,6 +55,12 @@ module Swmm
       # float32 -> readable Float (0.1f0 reads back as 0.10000000149; keep the 7 digits that mean something)
       def clean(x) = x.finite? ? format("%.7g", x).to_f : nil
 
+      # +kind+ (Symbol or String) as one of KINDS; anything else (nil included) is an UnknownObject
+      def kind!(kind)
+        sym = kind.to_sym if kind.is_a?(Symbol) || kind.is_a?(String)
+        KINDS.include?(sym) ? sym : raise(UnknownObject, "unknown kind #{kind.inspect} (#{KINDS.join(", ")})")
+      end
+
       # Ruby 4.0 still prints "Ractor API is experimental" on the first Ractor; a library should not write that to the user's
       # stderr. The flag is process-wide, so overlapping calls (threads) share one save/restore: the first in saves it, the
       # last out puts it back.
@@ -87,6 +93,9 @@ module Swmm
     # "5.2.4": the engine version that wrote the file
     def engine_version = Swmm.format_version(@version)
 
+    # Raises OutputFormatError for a file SWMM did not write (or a truncated one).
+    def self.read(path) = new(File.binread(path))
+
     # ponytail: the whole .out stays in memory (fine up to a few hundred MB); switch to IO seeks beyond that.
     # Values are read little-endian, as the engine writes them on x86/arm64.
     def initialize(bytes)
@@ -98,11 +107,12 @@ module Swmm
       @times ||= Array.new(@periods) { |p| date_at(period_offset(p)) }
     end
 
-    # Values of one variable for one object, one per period (aligned with #times).
+    # Values of one variable for one object, one per period (aligned with #times). UnknownObject for a kind, id or
+    # variable the file does not have.
     def series(kind, id, variable)
-      kind = kind.to_sym
-      index = kind == :system ? 0 : @ids.fetch(kind).index(id.to_s) || raise(KeyError, "#{kind} has no #{id.inspect}")
-      var = @variables.fetch(kind).index(variable.to_s) || raise(KeyError, "#{kind} has no variable #{variable.inspect}")
+      kind = self.class.kind!(kind)
+      index = kind == :system ? 0 : @ids.fetch(kind).index(id.to_s) || raise(UnknownObject, "#{kind} has no #{id.inspect}")
+      var = @variables.fetch(kind).index(variable.to_s) || raise(UnknownObject, "#{kind} has no variable #{variable.inspect}")
       base = @base.fetch(kind) + (index * @variables.fetch(kind).size) + var
       Array.new(@periods) { |p| self.class.clean(@bytes.unpack1("e", offset: period_offset(p) + 8 + (4 * base))) }
     end
@@ -110,7 +120,7 @@ module Swmm
     # { id => { variable => [values per period] } } for every object of a kind, read in one pass: one unpack per
     # period instead of one per value, which is what makes dumping a whole week (to_h, to_csv) affordable.
     def all_series(kind)
-      kind = kind.to_sym
+      kind = self.class.kind!(kind)
       names = @variables.fetch(kind)
       ids = kind == :system ? ["system"] : @ids.fetch(kind)
       columns = columns_of(kind, ids.size, names.size)

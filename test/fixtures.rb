@@ -27,6 +27,17 @@ module Fixtures
   # uninitialised variable for a snowpack that has a surface of zero area, and about 2 % of identical runs end with NaN runoff
   # continuity and S1 runoff 0 (macOS never did; a snowpack that is defined but unused is fine). So only a test that does not
   # compare numbers may ask for it.
+  # base with shallower nodes, a narrower C1 and a larger hydrograph: J1 floods for about 1.8 hours, worst at 01:00.
+  # +options+ go into [OPTIONS] (e.g. report_start_time:).
+  def flooded(**options)
+    base.merge(
+      options: base[:options].merge(options),
+      junctions: [{ name: "J1", elevation: 10, max_depth: 1 }, { name: "J2", elevation: 9.5, max_depth: 1 }],
+      xsections: [{ link: "C1", shape: "CIRCULAR", geom1: 0.15 }, { link: "C2", shape: "CIRCULAR", geom1: 0.4 }],
+      timeseries: [{ name: "Q", points: [[0, 0], [0.5, 80], [1, 120], [2, 0]] }]
+    )
+  end
+
   def full(dir, snow: false)
     {
       title: ["Contract conformance model", "uses every section"],
