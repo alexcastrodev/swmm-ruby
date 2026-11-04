@@ -11,7 +11,9 @@ require_relative "swmm/input"
 require_relative "swmm/input_parser"
 require_relative "swmm/engine"
 require_relative "swmm/output_file"
+require_relative "swmm/report"
 require_relative "swmm/result"
+require_relative "swmm/variables"
 
 # Wrapper for EPA SWMM5. Input contract: Swmm::Input (Hash -> validated .inp). Output contract: Swmm::Result.
 #
@@ -85,8 +87,8 @@ module Swmm
     out = File.join(dir, "model.out")
     input.is_a?(Input) ? input.write(inp) : inp = File.expand_path(input.to_s)
     raw = engine.run(inp, rpt, out)
-    report = File.exist?(rpt) ? File.binread(rpt).force_encoding(Encoding::UTF_8).scrub : ""
-    output = OutputFile.new(File.binread(out)) if raw[:code].zero? && File.exist?(out)
+    report = Report.new(File.exist?(rpt) ? File.binread(rpt) : "")
+    output = OutputFile.read(out) if raw[:code].zero? && File.exist?(out)
 
     Result.new(version: engine.version, raw: raw, report: report, output: output,
                files: keep ? { inp: inp, rpt: rpt, out: out } : nil)

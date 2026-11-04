@@ -99,7 +99,7 @@ result.to_h  # =>
 }
 ```
 
-Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
+Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; as variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
 
 ### Alagamentos — `node_flooding`
 
@@ -131,6 +131,26 @@ Para arquivos gerados pela interface do SWMM, pelo `swmm5` de linha de comando o
 - A versão sai do `.out` ou, sem ele, do cabeçalho do relatório da EPA (`Build 5.2.4`) ou da OWA (`VERSION v5.2.1`).
 - Arquivo ausente levanta `Errno::ENOENT`; `.rpt` que não foi escrito pelo SWMM (sem o cabeçalho `STORM WATER MANAGEMENT MODEL`), `Swmm::ReportFormatError`; `.out` que não é do SWMM, `Swmm::OutputFormatError`.
 - Um `.out` de outra simulação levanta `Swmm::MismatchedFiles`: a unidade de vazão, o passo de relatório, o início e o fim que o relatório imprime têm de bater com o `.out`. Outra execução do mesmo modelo não é distinguível.
+
+### Só um dos arquivos — `Swmm::Report.read` / `Swmm::OutputFile.read`
+
+Cada arquivo tem o seu contrato; o `Result` junta os dois e acrescenta o que só os dois juntos dizem (o código de erro do motor, que são da mesma execução e o início do relatório, `report_start`).
+
+```ruby
+report = Swmm::Report.read("modelo.rpt")    # não lê o .out (que pode ter centenas de MB)
+report.ok? / error / warnings / continuity / flow_instability / analysis_options / version / to_h
+report.node_flooding                        # max_elapsed; max_time é nil: o relatório não imprime o próprio início
+report.node_flooding(start: result.report_start)   # com max_time, como result.node_flooding
+report.text                                 # o texto do .rpt
+
+output = Swmm::OutputFile.read("modelo.out")
+output.times / ids / variables / series(:links, "C1", :flow) / all_series(:links) / units
+
+result.rpt     # => Swmm::Report        (result.report continua sendo o texto)
+result.output  # => Swmm::OutputFile
+```
+
+`Swmm::Report.read` levanta `Swmm::ReportFormatError` para um arquivo sem o cabeçalho do SWMM; `Swmm::Report.new(texto)` aceita qualquer texto (vazio inclusive). Sem o `.out`, o código de erro sai do relatório (2xx viram `200`).
 
 ## Várias simulações — `Swmm.run_many`
 

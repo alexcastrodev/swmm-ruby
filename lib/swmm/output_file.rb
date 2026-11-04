@@ -93,6 +93,9 @@ module Swmm
     # "5.2.4": the engine version that wrote the file
     def engine_version = Swmm.format_version(@version)
 
+    # Raises OutputFormatError for a file SWMM did not write (or a truncated one).
+    def self.read(path) = new(File.binread(path))
+
     # ponytail: the whole .out stays in memory (fine up to a few hundred MB); switch to IO seeks beyond that.
     # Values are read little-endian, as the engine writes them on x86/arm64.
     def initialize(bytes)
