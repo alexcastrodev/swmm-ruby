@@ -162,7 +162,7 @@ class OutputFuzzTest < Minitest::Test
       out = Swmm::OutputFile.new(bytes)
       assert_equal bytes.unpack1("l<", offset: at[:output_pos]), at[:output], name
       assert_equal out.variables.values.map(&:size), at[:var_counts].map { bytes.unpack1("l<", offset: _1) }, name
-      assert_equal out.report_step, bytes.unpack1("l<", offset: at[:step]), name
+      assert_equal out.report_step.in_seconds, bytes.unpack1("l<", offset: at[:step]), name
     end
     assert_equal 2, Swmm::OutputFile.new(real(:full)).pollutants.size, "full model must exercise pollutants"
     refute_empty Swmm::OutputFile.new(real(:full)).ids[:subcatchments]
@@ -281,8 +281,8 @@ class OutputFuzzTest < Minitest::Test
     # uses it); report_step 0 or negative and any version are passed on as written.
     bytes = real(:base)
     at = layout(bytes)
-    assert_equal 0, Swmm::OutputFile.new(i32(bytes, at[:step], 0)).report_step
-    assert_equal(-1, Swmm::OutputFile.new(i32(bytes, at[:step], -1)).report_step)
+    assert_equal Swmm::TimeStep.new(0), Swmm::OutputFile.new(i32(bytes, at[:step], 0)).report_step
+    assert_equal "-00:00:01", Swmm::OutputFile.new(i32(bytes, at[:step], -1)).report_step.formatted
     assert_equal [12, 317], Swmm::OutputFile.new(i32(bytes, at[:error], 317)).then { [_1.periods, _1.engine_error] }
     assert_equal "-1.9.999", Swmm::OutputFile.new(i32(bytes, at[:version], -1)).engine_version
   end

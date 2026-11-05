@@ -7,7 +7,8 @@ require_relative "input"
 
 module Swmm
   class Input
-    # .inp text -> the contract Hash Swmm::Input takes (Schema), so that a model written by the SWMM GUI, the swmm5 CLI or
+    # .inp text -> the contract Hash Swmm::Input takes (Schema), as a Swmm::Model (that Hash, which also counts its
+    # objects: model.count_nodes, model.total_links, ...), so that a model written by the SWMM GUI, the swmm5 CLI or
     # Swmm::Input can be read, changed and run again: Swmm::Input.new(Swmm::Input.parse(text)) writes it back.
     #
     #   Swmm::Input.read("model.inp")                                        # every section
@@ -15,7 +16,7 @@ module Swmm
     #
     # Sections present in the file come back with their lowercase names; empty ones are left out. Values are typed:
     # numbers as Integer / Float, YES/NO as true / false, keywords in the case Schema lists them, MM/DD/YYYY dates as
-    # Date, clock times as "H:MM[:SS]" text, names and labels as String. A row that does not fit its section's columns is
+    # Date, clock times as "H:MM[:SS]" text, time steps as Swmm::TimeStep, names and labels as String. A row that does not fit its section's columns is
     # kept as the Array of its tokens (Input writes such a row as given). What the contract cannot hold (an unknown
     # section, option, keyword or report line, a malformed table line) raises InvalidInput, with every problem and its line.
     def self.parse(text, only: nil) = Parser.new(text, only).parse
@@ -46,7 +47,7 @@ module Swmm
         end
         raise InvalidInput, @errors.sort_by { _1[:path][/line (\d+)\)\z/, 1].to_i } unless @errors.empty?
 
-        data.to_h
+        Model[data.to_h]
       end
 
       private
@@ -99,10 +100,20 @@ module Swmm
         when :any then number(text) || text
         when :date then date(text)
         when :time then clock(text)
-        when :seconds then number(text) || (text if text.match?(Types::CLOCK))
+        when :step then clock(text)&.then { TimeStep.parse(it) }
+        when :seconds then step_of_seconds(text)
+        when :decimal_seconds then number(text)&.then { TimeStep.new(it) unless it.negative? }
         when :monthday then text if text.match?(MONTHDAY)
         else text # names, labels, paths
         end
+      end
+
+      # decimal seconds or "H:MM[:SS]", as SWMM reads ROUTING_STEP
+      def step_of_seconds(text)
+        seconds = number(text)
+        return TimeStep.new(seconds) if seconds && !seconds.negative?
+
+        TimeStep.parse(text) if text.match?(Types::CLOCK)
       end
 
       def number(text)

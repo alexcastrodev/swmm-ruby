@@ -43,10 +43,10 @@ Hash of option => value.
 - `sweep_start`: monthday
 - `sweep_end`: monthday
 - `dry_days`: num
-- `report_step`: time
-- `wet_step`: time
-- `dry_step`: time
-- `rule_step`: time
+- `report_step`: step
+- `wet_step`: step
+- `dry_step`: step
+- `rule_step`: step
 - `routing_step`: seconds
 - `lengthening_step`: seconds
 - `variable_step`: num
@@ -55,7 +55,7 @@ Hash of option => value.
 - `head_tolerance`: num
 - `sys_flow_tol`: num
 - `lat_flow_tol`: num
-- `minimum_step`: num
+- `minimum_step`: decimal_seconds
 - `max_trials`: int
 - `threads`: int
 - `tempdir`: id
@@ -75,7 +75,7 @@ Hash of option => value.
 |---|---|---|
 | `name` | id | **required** |
 | `format` | INTENSITY \| VOLUME \| CUMULATIVE | **required** |
-| `interval` | time | **required** |
+| `interval` | step | **required** |
 | `snow_catch_factor` | num | `1` |
 | `source` | TIMESERIES \| FILE | **required** |
 | `series` | id | **required** (when `source` is TIMESERIES) |

@@ -99,7 +99,7 @@ result.to_h  # =>
 }
 ```
 
-Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; as variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
+Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `types(:nodes | :links)`, `counts`, `count_nodes`, `count_links`, `count_nodes_<tipo>` / `count_links_<tipo>`, `total_nodes` / `total_links` / `total_subcatchments` / `total_pollutants`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; as variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
 
 ### Alagamentos — `node_flooding`
 
@@ -113,7 +113,8 @@ result.node_flooding  # =>
 - `max_rate` na unidade de vazão; `volume` na unidade de volume de `units` (m3 ou ft3; o relatório imprime 10^6 L ou 10^6 gal); `max_ponded_depth` em m ou ft.
 - O relatório conta o "days hr:min" do máximo a partir do início do relatório (`REPORT_START`), não do início da simulação: `max_elapsed` são esses segundos e `max_time` é `report_start + max_elapsed` (`nil` sem `.out`).
 - `report_start` não está no relatório: sai do início que o `.out` grava. É exato quando o `REPORT_START` é o início da simulação ou fica um número inteiro de passos de relatório (pelo menos dois) depois dele; nos outros casos os arquivos não o distinguem de um início anterior e `report_start` sai até um passo de relatório mais cedo.
-- `analysis_options` são os valores do bloco "Analysis Options" do relatório: `{ flow_units:, start:, end:, report_step: }` (`nil` para o que o relatório não imprime).
+- `analysis_options` são os valores do bloco "Analysis Options" do relatório: `{ flow_units:, start:, end:, report_step:, flow_routing:, surcharge_method:, routing_step:, variable_step: }` (`nil` para o que o relatório não imprime). `flow_routing` é o método (`"DYNWAVE"`, `"KINWAVE"`, …), `report_step` e `routing_step` são `Swmm::TimeStep`, `variable_step` `true`/`false` (o relatório imprime YES/NO, não o fator do `.inp`); os de routing só aparecem com Flow Routing ligado, `surcharge_method` só em DYNWAVE. Os valores de `flow_units`, `flow_routing` e `surcharge_method` também existem como constantes: `Swmm::Options::FlowUnits::LPS`, `Swmm::Options::FlowRouting::DYNWAVE`, `Swmm::Options::SurchargeMethod::EXTRAN`, … (as mesmas strings, também para `OutputFile#flow_units` e para as `options` do `Swmm::Input`).
+- Todo step que a gem devolve é um `Swmm::TimeStep`: `report_step`/`routing_step` do relatório, `OutputFile#report_step` e os `*_step` de tempo das `options` lidas por `Swmm::Input.parse` (`report_step`, `wet_step`, `dry_step`, `rule_step`, `routing_step`, `lengthening_step`, `minimum_step`) e o `interval` dos `raingages`. `step.in_seconds` (Integer, ou Float com fração: `0.5`), `step.formatted` (`"00:05:00"`, hh:mm:ss), `to_s` = `formatted`; compara com outro `TimeStep` (não com um número), e em JSON é os segundos. O `Swmm::Input` aceita um `TimeStep` onde aceita segundos ou `"H:MM[:SS]"` (`minimum_step` só segundos decimais: o motor não lê relógio aí). O `to_h` do `Result` continua a dar `report_step` em segundos (Integer).
 
 `Swmm.run(model, dir: "tmp/run1")` mantém `model.inp`, `model.rpt` e `model.out`; sem `dir:` ficam num diretório temporário removido ao fim.
 
@@ -132,6 +133,24 @@ Para arquivos gerados pela interface do SWMM, pelo `swmm5` de linha de comando o
 - Arquivo ausente levanta `Errno::ENOENT`; `.rpt` que não foi escrito pelo SWMM (sem o cabeçalho `STORM WATER MANAGEMENT MODEL`), `Swmm::ReportFormatError`; `.out` que não é do SWMM, `Swmm::OutputFormatError`.
 - Um `.out` de outra simulação levanta `Swmm::MismatchedFiles`: a unidade de vazão, o passo de relatório, o início e o fim que o relatório imprime têm de bater com o `.out`. Outra execução do mesmo modelo não é distinguível.
 
+### Quantos objetos tem o modelo — `Swmm::Model`
+
+`Swmm::Input.read` / `.parse` devolvem um `Swmm::Model`: o mesmo Hash de sempre (`model[:options].merge!(...)`, `Swmm.run(model)`, `Swmm::Input.new(model)` continuam iguais), que também conta os seus objetos. Um Hash seu vira um com `Swmm::Model[hash]`.
+
+```ruby
+model = Swmm::Input.read("modelo.inp")
+model.count_nodes           # { "JUNCTION" => 605, "OUTFALL" => 1, "STORAGE" => 3 } (por tipo; sem os que não tem)
+model.count_links           # { "CONDUIT" => 607, "PUMP" => 1 }
+model.count_links_conduit   # 607 (um tipo: count_nodes_junction / _outfall / _storage / _divider,
+                            #  count_links_conduit / _pump / _orifice / _weir / _outlet; 0 sem nenhum)
+model.total_nodes           # 609
+model.total_links           # 608
+model.total_subcatchments   # 0
+model.total_pollutants      # 0
+```
+
+O `OutputFile` (e o `Result`) têm os mesmos métodos, mas contam só o que o `.out` guardou: os objetos que o `[REPORT]` lista (`NODES ALL` / `LINKS ALL` guardam todos).
+
 ### Só um dos arquivos — `Swmm::Report.read` / `Swmm::OutputFile.read`
 
 Cada arquivo tem o seu contrato; o `Result` junta os dois e acrescenta o que só os dois juntos dizem (o código de erro do motor, que são da mesma execução e o início do relatório, `report_start`).
@@ -144,11 +163,41 @@ report.node_flooding(start: result.report_start)   # com max_time, como result.n
 report.text                                 # o texto do .rpt
 
 output = Swmm::OutputFile.read("modelo.out")
-output.times / ids / variables / series(:links, "C1", :flow) / all_series(:links) / units
+output.times / ids / variables / series(:links, "C1", :flow) / all_series(:links) / each_period(:links) / units
+output.types(:nodes)                # { "J1" => "JUNCTION", "O1" => "OUTFALL", ... } (JUNCTION OUTFALL STORAGE DIVIDER)
+output.types(:links)                # { "C1" => "CONDUIT", ... } (CONDUIT PUMP ORIFICE WEIR OUTLET)
+output.counts                       # { subcatchments: 0, nodes: 609, links: 608, pollutants: 0 }
+output.count_nodes                  # { "JUNCTION" => 605, "OUTFALL" => 1, "STORAGE" => 3 }: totais por tipo
+output.count_links                  # { "CONDUIT" => 607, "PUMP" => 1 }
+output.count_links_pump             # 1 (um tipo, como no Model: count_nodes_junction ... count_links_outlet)
+output.total_nodes                  # 609 (também total_links, total_subcatchments, total_pollutants)
 
 result.rpt     # => Swmm::Report        (result.report continua sendo o texto)
 result.output  # => Swmm::OutputFile
 ```
+
+#### Memória: o `.out` é lido do ficheiro, à medida
+
+`Swmm::OutputFile.read(path)` só guarda em memória o cabeçalho (ids, tipos, unidades, datas: poucos KB) e lê os valores do ficheiro quando pedidos, `Swmm::OutputFile.chunk_bytes` (8 MB) de cada vez. O ficheiro tem de ficar lá enquanto o leitor é usado (se sumir: `Swmm::Error` "the .out is gone"; se mudar a meio: `Swmm::OutputFormatError`). `Swmm::OutputFile.new(File.binread(path))` lê tudo para memória, como antes. `Swmm.run(dir:)` e `Swmm.read` leem do ficheiro; `Swmm.run` sem `dir:` carrega o `.out` inteiro (o diretório temporário é apagado no fim).
+
+O que cada chamada devolve fica em memória: `series` (uma série) é pequeno, `all_series` de um tipo grande e `to_csv` em String são grandes. Para percorrer tudo sem os segurar:
+
+```ruby
+output.each_period(:links) { |time, values| values["C1"]["flow"] }   # um período de cada vez (Enumerator sem bloco)
+File.open("links.csv", "w") { |io| result.to_csv(:links, io) }       # escrito aos bocados, nunca inteiro em memória
+```
+
+Num `.out` de 116 MB (609 nós, 608 links, 4321 períodos):
+
+| | ler do ficheiro | antes (tudo em memória) |
+| --- | --- | --- |
+| abrir (`OutputFile.read`) | ~6 ms, +0 MB | ~500 ms, +116 MB |
+| `counts` / `count_nodes` / `count_links` / `times` | < 1 ms | < 1 ms |
+| `series` de um link | ~5 ms | ~2 ms |
+| `each_period(:links)` | ~6 s, ~40 MB | — |
+| `to_csv(:links, io)` | ~9 s, ~100 MB | — |
+| `to_csv(:links)` String (Ractors) | ~3 s, ~1 GB | igual |
+| `all_series(:links)` (Ractors) | ~1,4 s, ~450 MB | igual |
 
 `Swmm::Report.read` levanta `Swmm::ReportFormatError` para um arquivo sem o cabeçalho do SWMM; `Swmm::Report.new(texto)` aceita qualquer texto (vazio inclusive). Sem o `.out`, o código de erro sai do relatório (2xx viram `200`).
 

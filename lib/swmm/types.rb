@@ -121,11 +121,30 @@ module Swmm
       end
     end
 
-    def seconds(v) # routing-step style: decimal seconds (0 allowed, e.g. lengthening_step) or HH:MM:SS
+    # report-step style: HH:MM[:SS], a number of seconds (Integer) or a TimeStep of whole seconds
+    def step(v)
+      return time(v) unless v.is_a?(TimeStep)
+      raise ArgumentError, "must not be negative" if v.in_seconds.negative?
+      raise ArgumentError, "must be whole seconds, got #{v.in_seconds}" unless v.whole?
+
+      v.formatted
+    end
+
+    # routing-step style: decimal seconds (0 allowed, e.g. lengthening_step), HH:MM:SS or a TimeStep
+    def seconds(v)
+      v = v.in_seconds if v.is_a?(TimeStep) # written as decimal seconds, as SWMM reads them
       return v if v.is_a?(String) && v.match?(CLOCK)
       return num(v) if v.is_a?(Numeric) && !v.negative?
 
       raise ArgumentError, "must be a non-negative number of seconds or HH:MM:SS"
+    end
+
+    # MINIMUM_STEP style: decimal seconds only (the engine reads no clock there), or a TimeStep
+    def decimal_seconds(v)
+      v = v.in_seconds if v.is_a?(TimeStep)
+      return num(v) if v.is_a?(Numeric) && !v.negative?
+
+      raise ArgumentError, "must be a non-negative number of seconds"
     end
 
     def monthday(v)

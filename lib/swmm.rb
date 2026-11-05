@@ -5,6 +5,9 @@ require "fileutils"
 require "tmpdir"
 require_relative "swmm/version"
 require_relative "swmm/errors"
+require_relative "swmm/time_step"
+require_relative "swmm/model"
+require_relative "swmm/options"
 require_relative "swmm/types"
 require_relative "swmm/schema"
 require_relative "swmm/input"
@@ -23,7 +26,8 @@ require_relative "swmm/variables"
 module Swmm
   # input: Hash (validated into an Input), Swmm::Input, or the path of an existing .inp.
   #        The sections may also be given as keywords: Swmm.run(options: {...}, junctions: [...]).
-  # dir:   keep model.inp / model.rpt / model.out there (result.files lists them); default: a temp dir, removed after the run.
+  # dir:   keep model.inp / model.rpt / model.out there (result.files lists them), and read the .out from there as it is
+  #        used (only its header in memory); default: a temp dir, removed after the run, so the whole .out is loaded.
   # Raises InvalidInput for contract violations; engine failures come back as result.error.
   def self.run(input = nil, dir: nil, **sections)
     input = to_input(input.nil? ? sections : input)
@@ -88,7 +92,8 @@ module Swmm
     input.is_a?(Input) ? input.write(inp) : inp = File.expand_path(input.to_s)
     raw = engine.run(inp, rpt, out)
     report = Report.new(File.exist?(rpt) ? File.binread(rpt) : "")
-    output = OutputFile.read(out) if raw[:code].zero? && File.exist?(out)
+    # kept files are read as they are used; a temp dir goes away with the run, so its .out is loaded whole
+    output = (keep ? OutputFile.read(out) : OutputFile.new(File.binread(out))) if raw[:code].zero? && File.exist?(out)
 
     Result.new(version: engine.version, raw: raw, report: report, output: output,
                files: keep ? { inp: inp, rpt: rpt, out: out } : nil)

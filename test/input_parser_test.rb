@@ -97,8 +97,8 @@ class InputParserTest < Minitest::Test
 
   def test_reads_options_typed
     assert_equal({ flow_units: "LPS", flow_routing: "DYNWAVE", start_date: Date.new(2026, 3, 23), start_time: "08:00:00",
-                   report_start_date: Date.new(2026, 3, 23), report_start_time: "8:30:00", report_step: "00:05:00",
-                   routing_step: "0:00:30", allow_ponding: false, variable_step: 0.75 }, parsed[:options], "decimal hours become a clock")
+                   report_start_date: Date.new(2026, 3, 23), report_start_time: "8:30:00", report_step: Swmm::TimeStep.new(300),
+                   routing_step: Swmm::TimeStep.new(30), allow_ponding: false, variable_step: 0.75 }, parsed[:options], "decimal hours become a clock")
   end
 
   def test_reads_the_title_without_comments

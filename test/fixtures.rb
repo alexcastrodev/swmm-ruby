@@ -55,7 +55,7 @@ module Fixtures
       },
       files: [{ mode: "SAVE", type: "HOTSTART", path: File.join(dir, "end state.hsf") }],
 
-      raingages: [{ name: "RG1", format: "INTENSITY", interval: "0:15", source: "TIMESERIES", series: "RAIN" }],
+      raingages: [{ name: "RG1", format: "INTENSITY", interval: "00:15:00", source: "TIMESERIES", series: "RAIN" }],
       temperature: {
         timeseries: "TEMP", snowmelt: [0, 0.5, 0.6, 50, 40, 0],
         adc_impervious: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1], adc_pervious: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
