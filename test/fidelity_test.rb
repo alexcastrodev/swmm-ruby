@@ -163,6 +163,20 @@ class EpaExample1Test < Minitest::Test
     assert_equal [8, 14, 13, 2], [@out.ids[:subcatchments].size, @out.ids[:nodes].size, @out.ids[:links].size, @out.pollutants.size]
   end
 
+  def test_node_and_link_types_the_input_block_saves
+    assert_equal({ "JUNCTION" => 13, "OUTFALL" => 1 }, @out.types(:nodes).values.tally)
+    assert_equal "OUTFALL", @out.types(:nodes)["18"]
+    assert_equal({ "CONDUIT" => 13 }, @out.types(:links).values.tally)
+    assert_equal @out.ids[:nodes], @out.types(:nodes).keys
+    assert_equal({ subcatchments: 8, nodes: 14, links: 13, pollutants: 2 }, @out.counts)
+    assert_equal({ "JUNCTION" => 13, "OUTFALL" => 1 }, @out.count_nodes)
+    assert_equal({ "CONDUIT" => 13 }, @out.count_links)
+    assert_equal [13, 1, 0, 13, 0], [@out.count_nodes_junction, @out.count_nodes_outfall, @out.count_nodes_storage, @out.count_links_conduit, @out.count_links_pump]
+    assert_equal [14, 13, 8, 2], [@out.total_nodes, @out.total_links, @out.total_subcatchments, @out.total_pollutants]
+    assert_equal "subcatchments have no type", assert_raises(Swmm::UnknownObject) { @out.types(:subcatchments) }.message
+    assert_raises(Swmm::UnknownObject) { @out.types(:system) }
+  end
+
   def test_names_pollutants_and_units_as_in_the_cpp_test
     assert_equal "CFS", @out.flow_units # test_getFlowUnits: 0
     assert_equal %w[TSS Lead], @out.pollutants
@@ -171,7 +185,7 @@ class EpaExample1Test < Minitest::Test
     assert_equal "ft", @out.units[:nodes]["depth"], "unit system SMO_US"
     assert_equal "in/h", @out.units[:subcatchments]["rainfall"]
     assert_equal 36, @out.periods # test_getTimes SMO_numPeriods
-    assert_equal 3600, @out.report_step # test_getTimes SMO_reportStep
+    assert_equal 3600, @out.report_step.in_seconds # test_getTimes SMO_reportStep
     assert_equal Time.utc(1998, 1, 1), @out.start # test_getStartDate: 35796.0 days since 1899-12-30
     assert_equal (Time.utc(1998, 1, 1) + 3600), @out.times.first
     assert_equal Time.utc(1998, 1, 2, 12), @out.times.last, "36 periods of 1 h after the start"
@@ -371,7 +385,7 @@ class EngineOracleTest < Minitest::Test
         assert_equal first, result.times.first.strftime("%H:%M"), "#{label}: first period is the first step at or after report_start"
         assert_equal Time.utc(2026, 3, 24, 2), result.times.last, label
         assert_equal [minutes * 60.0], result.times.each_cons(2).map { _2 - _1 }.uniq, label
-        assert_equal minutes * 60, result.output.report_step, label
+        assert_equal minutes * 60, result.output.report_step.in_seconds, label
         stamps = Oracle.tables(oracle.report, "Node")["J1"].map(&:first)
         assert_equal result.times, stamps, "#{label}: dates of the report table"
         # the series of the periods that exist are still the engine's values
@@ -544,8 +558,9 @@ class EngineOracleTest < Minitest::Test
 
   def test_every_flow_unit_is_reported_consistently_by_the_gem_the_engine_and_the_report
     results = {}
-    PEAK.each_key do |unit|
-      Dir.mktmpdir do |dir|
+    Dir.mktmpdir do |root| # the results read their .out as they are used: the files stay until the end
+      PEAK.each_key do |unit|
+        dir = FileUtils.mkdir_p(File.join(root, unit)).first
         result, oracle = both(model_in(unit), dir)
         results[unit] = result
         si = %w[LPS CMS MLD].include?(unit)
@@ -565,13 +580,13 @@ class EngineOracleTest < Minitest::Test
         near PEAK[unit], result.series(:nodes, "J1", :lateral_inflow).max, rel: 5e-3, msg: "#{unit}: peak of the hydrograph in the unit"
         compare_with_saved(result, oracle)
       end
-    end
-    # same network, flows scaled by the unit conversion: depths agree, flows scale (factors: cfs->unit, 1 cfs = 448.831 gpm ...)
-    { "GPM" => 448.831, "MGD" => 0.646317 }.each do |unit, k|
-      assert_series_scaled results["CFS"], results[unit], k
-    end
-    { "CMS" => 0.001, "MLD" => 0.0864 }.each do |unit, k|
-      assert_series_scaled results["LPS"], results[unit], k
+      # same network, flows scaled by the unit conversion: depths agree, flows scale (factors: cfs->unit, 1 cfs = 448.831 gpm ...)
+      { "GPM" => 448.831, "MGD" => 0.646317 }.each do |unit, k|
+        assert_series_scaled results["CFS"], results[unit], k
+      end
+      { "CMS" => 0.001, "MLD" => 0.0864 }.each do |unit, k|
+        assert_series_scaled results["LPS"], results[unit], k
+      end
     end
   end
 

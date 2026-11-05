@@ -15,9 +15,15 @@ class ReportTest < Minitest::Test
     Analysis Options
     ****************
     Flow Units ............... LPS
+    Process Models:
+      Flow Routing ........... YES
+    Flow Routing Method ...... DYNWAVE
+    Surcharge Method ......... EXTRAN
     Starting Date ............ 03/24/2026 00:00:00
     Ending Date .............. 03/24/2026 02:00:00
     Report Time Step ......... 00:10:00
+    Routing Time Step ........ 5.00 sec
+    Variable Time Step ....... NO
 
     **************************        Volume        Volume
     Flow Routing Continuity        hectare-m      10^6 ltr
@@ -57,7 +63,16 @@ class ReportTest < Minitest::Test
     assert_equal ["WARNING 04: minimum elevation drop used for Conduit C1"], report.warnings
     assert_equal({ runoff: 0.0, flow_routing: -0.114, quality: 0.0 }, report.continuity)
     assert_equal({ "C1" => 12 }, report.flow_instability)
-    assert_equal({ flow_units: "LPS", start: Time.utc(2026, 3, 24), end: Time.utc(2026, 3, 24, 2), report_step: 600 }, report.analysis_options)
+    assert_equal({ flow_units: "LPS", start: Time.utc(2026, 3, 24), end: Time.utc(2026, 3, 24, 2), report_step: Swmm::TimeStep.new(600),
+                   flow_routing: "DYNWAVE", surcharge_method: "EXTRAN", routing_step: Swmm::TimeStep.new(5), variable_step: false }, report.analysis_options)
+  end
+
+  def test_reads_the_routing_a_run_without_flow_routing_does_not_print
+    report = Swmm::Report.new(OK.sub(/^\s*Flow Routing Method.*\n/, "").sub(/^\s*Surcharge Method.*\n/, "")
+                                .sub(/^\s*Routing Time Step.*\n/, "").sub(/^\s*Variable Time Step.*\n/, ""))
+    assert_equal({ flow_units: "LPS", flow_routing: nil, surcharge_method: nil, routing_step: nil, variable_step: nil },
+                 report.analysis_options.slice(:flow_units, :flow_routing, :surcharge_method, :routing_step, :variable_step))
+    assert_equal true, Swmm::Report.new(OK.sub("Variable Time Step ....... NO", "Variable Time Step ....... YES")).analysis_options[:variable_step]
   end
 
   def test_the_flooding_peak_is_placed_only_when_given_the_report_start
@@ -85,13 +100,14 @@ class ReportTest < Minitest::Test
     h = Swmm::Report.new(OK).to_h
     assert_equal ["ok", "5.2.4", nil, { "C1" => 12 }], h.values_at(:status, :swmm_version, :error, :flow_instability)
     assert_equal ["J1", nil], h[:node_flooding].first.values_at(:node, :max_time)
-    JSON.generate(h)
+    assert_equal({ "report_step" => 600, "routing_step" => 5 }, JSON.parse(JSON.generate(h))["analysis_options"].slice("report_step", "routing_step"), "steps as seconds")
   end
 
   def test_a_blank_report_answers_as_one_that_printed_nothing
     report = Swmm::Report.new("")
     assert_equal [false, true, nil, [], {}], [report.swmm?, report.ok?, report.version, report.warnings, report.flow_instability]
-    assert_equal({ flow_units: nil, start: nil, end: nil, report_step: nil }, report.analysis_options)
+    assert_equal({ flow_units: nil, start: nil, end: nil, report_step: nil, flow_routing: nil, surcharge_method: nil, routing_step: nil, variable_step: nil },
+                 report.analysis_options)
   end
 
   def test_reads_any_encoding_and_refuses_what_is_not_text
