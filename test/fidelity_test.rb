@@ -223,6 +223,7 @@ class EpaExample1Test < Minitest::Test
     assert_equal({ "CONDUIT" => 13 }, @out.count_links)
     assert_equal [13, 1, 0, 13, 0], [@out.count_nodes_junction, @out.count_nodes_outfall, @out.count_nodes_storage, @out.count_links_conduit, @out.count_links_pump]
     assert_equal [14, 13, 8, 2], [@out.total_nodes, @out.total_links, @out.total_subcatchments, @out.total_pollutants]
+    assert_equal [8, 2], [@out.count_subcatchments, @out.count_pollutants], "aliases of total_subcatchments / total_pollutants"
     assert_equal "subcatchments have no type", assert_raises(Swmm::UnknownObject) { @out.types(:subcatchments) }.message
     assert_raises(Swmm::UnknownObject) { @out.types(:system) }
   end

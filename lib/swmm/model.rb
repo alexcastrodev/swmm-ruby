@@ -33,6 +33,8 @@ module Swmm
     def total_links = count_links.values.sum
     def total_subcatchments = rows(:subcatchments)
     def total_pollutants = rows(:pollutants)
+    alias_method :count_subcatchments, :total_subcatchments
+    alias_method :count_pollutants, :total_pollutants
 
     private
 

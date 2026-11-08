@@ -113,6 +113,8 @@ module Swmm
     def total_links = require_output.total_links
     def total_subcatchments = require_output.total_subcatchments
     def total_pollutants = require_output.total_pollutants
+    alias_method :count_subcatchments, :total_subcatchments
+    alias_method :count_pollutants, :total_pollutants
 
     def variables(kind)
       kind = OutputFile.kind!(kind)

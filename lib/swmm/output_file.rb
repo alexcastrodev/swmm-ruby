@@ -207,6 +207,8 @@ module Swmm
     def total_links = @ids[:links].size
     def total_subcatchments = @ids[:subcatchments].size
     def total_pollutants = @pollutants.size
+    alias_method :count_subcatchments, :total_subcatchments
+    alias_method :count_pollutants, :total_pollutants
 
     # the time of each period (read once, when the reader is built: a date that is not one is an OutputFormatError there)
     attr_reader :times

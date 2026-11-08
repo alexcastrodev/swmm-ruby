@@ -5,7 +5,7 @@ require "test_helper"
 class ModelTest < Minitest::Test
   PER_TYPE = %i[nodes_junction nodes_outfall nodes_storage nodes_divider links_conduit links_pump links_orifice links_weir links_outlet]
              .map { :"count_#{_1}" }
-  TOTALS = %i[total_nodes total_links total_subcatchments total_pollutants].freeze
+  TOTALS = %i[total_nodes total_links total_subcatchments total_pollutants count_subcatchments count_pollutants].freeze
 
   def test_is_what_input_read_gives_and_still_the_hash_input_takes
     model = Swmm::Input.parse(Swmm::Input.new(Fixtures.base).to_inp)
@@ -38,6 +38,7 @@ class ModelTest < Minitest::Test
     assert_equal({ "JUNCTION" => 2, "OUTFALL" => 1 }, model.count_nodes)
     assert_equal({}, model.count_links)
     assert_equal [3, 0, 0, 0], [model.total_nodes, model.total_links, model.total_subcatchments, model.total_pollutants]
+    assert_equal [0, 0], [model.count_subcatchments, model.count_pollutants], "aliases of total_subcatchments / total_pollutants"
     assert_equal [2, 0, 0], [model.count_nodes_junction, model.count_nodes_divider, model.count_links_conduit]
     assert_equal({}, Swmm::Model[{}].count_nodes)
   end

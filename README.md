@@ -99,7 +99,7 @@ result.to_h  # =>
 }
 ```
 
-Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `types(:nodes | :links)`, `counts`, `count_nodes`, `count_links`, `count_nodes_<tipo>` / `count_links_<tipo>`, `total_nodes` / `total_links` / `total_subcatchments` / `total_pollutants`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; as variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
+Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `types(:nodes | :links)`, `counts`, `count_nodes`, `count_links`, `count_nodes_<tipo>` / `count_links_<tipo>`, `total_nodes` / `total_links` / `total_subcatchments` / `total_pollutants`, `count_subcatchments`, `count_pollutants`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; as variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
 
 ### Alagamentos — `node_flooding`
 
@@ -145,8 +145,8 @@ model.count_links_conduit   # 607 (um tipo: count_nodes_junction / _outfall / _s
                             #  count_links_conduit / _pump / _orifice / _weir / _outlet; 0 sem nenhum)
 model.total_nodes           # 609
 model.total_links           # 608
-model.total_subcatchments   # 0
-model.total_pollutants      # 0
+model.total_subcatchments   # 0 (também count_subcatchments)
+model.total_pollutants      # 0 (também count_pollutants)
 ```
 
 O `OutputFile` (e o `Result`) têm os mesmos métodos, mas contam só o que o `.out` guardou: os objetos que o `[REPORT]` lista (`NODES ALL` / `LINKS ALL` guardam todos).
@@ -171,7 +171,7 @@ output.counts                       # { subcatchments: 0, nodes: 609, links: 608
 output.count_nodes                  # { "JUNCTION" => 605, "OUTFALL" => 1, "STORAGE" => 3 }: totais por tipo
 output.count_links                  # { "CONDUIT" => 607, "PUMP" => 1 }
 output.count_links_pump             # 1 (um tipo, como no Model: count_nodes_junction ... count_links_outlet)
-output.total_nodes                  # 609 (também total_links, total_subcatchments, total_pollutants)
+output.total_nodes                  # 609 (também total_links, total_subcatchments, total_pollutants; count_subcatchments e count_pollutants são os mesmos dois últimos)
 
 result.rpt     # => Swmm::Report        (result.report continua sendo o texto)
 result.output  # => Swmm::OutputFile

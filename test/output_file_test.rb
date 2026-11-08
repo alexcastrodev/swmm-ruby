@@ -45,6 +45,7 @@ class OutputFileTest < Minitest::Test
         assert_equal expected.values.tally.sort_by { |type, _| Swmm::OutputFile::TYPES.fetch(kind).index(type) }.to_h, result.public_send(:"count_#{kind}")
         assert_equal expected.size, result.counts[kind]
       end
+      assert_equal [result.total_subcatchments, result.total_pollutants], [result.count_subcatchments, result.count_pollutants], "aliases"
     end
   end
 
