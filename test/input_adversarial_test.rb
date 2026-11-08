@@ -47,7 +47,7 @@ end
 # One slot per place a String can reach the .inp, enumerated from Swmm::Schema (not hand-picked).
 module Slots
   SAMPLE = { id: "X", opt_id: "X", any: 1, text: "1", num: 1, int: 1, yn: true, date: "2026-01-01", time: "00:00",
-             seconds: 1, monthday: "01/01" }.freeze
+             step: "00:15", seconds: 1, decimal_seconds: 0.5, monthday: "01/01" }.freeze
   STRINGY = %i[id opt_id any text].freeze
 
   module_function

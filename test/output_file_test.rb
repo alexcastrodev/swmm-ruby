@@ -32,6 +32,23 @@ class OutputFileTest < Minitest::Test
     end
   end
 
+  def test_every_node_and_link_has_the_type_of_the_input_section_it_came_from
+    Dir.mktmpdir do |dir|
+      model = Fixtures.full(dir)
+      result = Swmm.run(model, dir: dir)
+      sections = { nodes: { junctions: "JUNCTION", outfalls: "OUTFALL", storage: "STORAGE", dividers: "DIVIDER" },
+                   links: { conduits: "CONDUIT", pumps: "PUMP", orifices: "ORIFICE", weirs: "WEIR", outlets: "OUTLET" } }
+      sections.each do |kind, types|
+        expected = types.flat_map { |section, type| Array(model[section]).map { [_1[:name], type] } }.to_h
+        assert_equal expected, result.types(kind), kind.to_s
+        assert_equal Swmm::OutputFile::TYPES.fetch(kind).sort, result.types(kind).values.uniq.sort, "every #{kind} type"
+        assert_equal expected.values.tally.sort_by { |type, _| Swmm::OutputFile::TYPES.fetch(kind).index(type) }.to_h, result.public_send(:"count_#{kind}")
+        assert_equal expected.size, result.counts[kind]
+      end
+      assert_equal [result.total_subcatchments, result.total_pollutants], [result.count_subcatchments, result.count_pollutants], "aliases"
+    end
+  end
+
   def test_all_series_matches_series_for_every_object
     Dir.mktmpdir do |dir|
       out = Swmm::OutputFile.new(File.binread(Swmm.run(Fixtures.base, dir: dir).files[:out]))

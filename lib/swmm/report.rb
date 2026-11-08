@@ -9,7 +9,9 @@ module Swmm
   #   report.warnings             # ["WARNING 02: ...", ...]
   #   report.continuity           # { runoff:, flow_routing:, quality: } percent errors (nil when the run failed)
   #   report.flow_instability     # { "C1" => 12, ... } links with flow reversals; {} when all are stable
-  #   report.analysis_options     # { flow_units: "LPS", start: Time, end: Time, report_step: 600 }
+  #   report.analysis_options     # { flow_units: "LPS", start_time: Time, end_time: Time, report_step: TimeStep 00:10:00,
+  #                               #   flow_routing: "DYNWAVE", surcharge_method: "EXTRAN", routing_step: TimeStep 00:00:05,
+  #                               #   variable_step: true }
   #   report.node_flooding        # [{ node: "J1", hours: 1.76, max_rate: 103.07, max_elapsed: 3600, ... }]
   #   report.to_h
   #
@@ -98,13 +100,20 @@ module Swmm
     end
 
     # What the report prints of the run under "Analysis Options"; nil for what it does not print (a run that failed on
-    # its input stops before them). Dates are UTC (SWMM dates carry no zone).
+    # its input stops before them; the routing ones only with Flow Routing on, surcharge_method only for DYNWAVE).
+    # Dates are UTC (SWMM dates carry no zone); report_step and routing_step are TimeSteps ("5.00 sec" is 5 s);
+    # variable_step true/false ("YES"/"NO": the .inp's factor is not printed).
     def analysis_options
       @analysis_options ||= begin
-        step = text.match(/^\s*Report Time Step \.+ (\d+):(\d+):(\d+)\s*$/)
+        step = text[/^\s*Report Time Step \.+ (\d+:\d+:\d+)\s*$/, 1]
+        routing = text[/^\s*Routing Time Step \.+ ([\d.]+) sec/, 1]
+        variable = option("Variable Time Step")
         {
-          flow_units: text[/^\s*Flow Units \.+ (\S+)/, 1], start: time_of("Starting Date"), end: time_of("Ending Date"),
-          report_step: step && ((step[1].to_i * 3600) + (step[2].to_i * 60) + step[3].to_i)
+          flow_units: option("Flow Units"), start_time: time_of("Starting Date"), end_time: time_of("Ending Date"),
+          report_step: step && TimeStep.parse(step),
+          flow_routing: option("Flow Routing Method"), surcharge_method: option("Surcharge Method"),
+          routing_step: routing && TimeStep.parse(routing),
+          variable_step: variable && variable == "YES"
         }
       end
     end
@@ -132,6 +141,9 @@ module Swmm
     end
 
     private
+
+    # "  Flow Routing Method ...... DYNWAVE" => "DYNWAVE"
+    def option(label) = text[/^\s*#{label} \.+ (\S+)/, 1]
 
     def continuity_error(title)
       text[/#{title}.*?Continuity Error \(%\) \.+([^\n]*)/m, 1].to_s.split.map(&:to_f).max_by(&:abs) || 0.0
