@@ -98,8 +98,9 @@ class ResultTest < Minitest::Test
   end
 
   def test_analysis_options_are_read_from_the_report
-    assert_equal({ flow_units: "LPS", start: Time.utc(2026, 3, 24), end: Time.utc(2026, 3, 24, 2), report_step: 600 }, result(FLOODING).analysis_options)
-    assert_equal({ flow_units: nil, start: nil, end: nil, report_step: nil }, result("").analysis_options)
+    assert_equal({ flow_units: "LPS", start_time: Time.utc(2026, 3, 24), end_time: Time.utc(2026, 3, 24, 2), report_step: Swmm::TimeStep.new(600) },
+                 result(FLOODING).analysis_options.slice(:flow_units, :start_time, :end_time, :report_step))
+    assert(result("").analysis_options.values.all?(&:nil?))
     assert_nil result(FLOODING).report_start, "it needs the start the .out saved"
   end
 

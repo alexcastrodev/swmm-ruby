@@ -10,7 +10,7 @@ Plataformas: macOS arm64, Linux aarch64 (Docker) e Linux x86_64 (glibc). Motor: 
 | `input_test.rb` | validação, mensagens com caminho, `.inp` gerado, JSON de ida e volta |
 | `conformance_test.rb` | modelo que usa **todas** as seções e variantes condicionais, no motor real |
 | `run_test.rb` | contrato de saída, erros do motor, `dir:`, `run_many`, continuidade, modelo instável |
-| `output_file_test.rb` | arquivo inválido/truncado, `series` × `all_series`, leitura em Ractors |
+| `output_file_test.rb` | arquivo inválido/truncado, `series` × `all_series`, leitura em Ractors, tipo de cada nó e link igual ao da seção do modelo (`types`, `count_*`, `total_*`) |
 | `csv_test.rb` | conteúdo do CSV contra oráculo independente, quoting, caminho em Ractors |
 | `ractor_test.rb` | módulo FFI congelado é compartilhável e um Ractor chama o motor |
 | `result_test.rb` | parser do relatório (instabilidade, alagamentos, opções de análise), tolerância de continuidade, `kind` desconhecido, `.rpt` que não é do SWMM, versão do cabeçalho EPA/OWA |
@@ -19,6 +19,10 @@ Plataformas: macOS arm64, Linux aarch64 (Docker) e Linux x86_64 (glibc). Motor: 
 | `report_test.rb` | `Swmm::Report` sem motor nem `.out`: versão, avisos, continuidade, opções da análise, alagamentos com e sem o início do relatório, erros 2xx como 200, relatório vazio, codificação, arquivo que não é do SWMM, e o mesmo conteúdo que o `Result` lê |
 | `variables_test.rb` | `Swmm::Variables` tem uma constante por variável do `.out` (igual a `OutputFile::VARIABLES`), lê a mesma série que o nome e erra com `NameError` para um nome que não existe |
 | `read_test.rb` | `Swmm.read` (`rpt`/`out` → `Result`): igual ao `Swmm.run`, continuidade com poluentes, erro sem `.out`, código de erro no epílogo, só o `.rpt`, arquivos inválidos, `.out` de outra simulação, horário do máximo dos alagamentos com e sem `REPORT_START` (e o limite do `report_start`), sem motor nem lib |
+| `output_file_stream_test.rb` | `OutputFile.read(path)` lê do arquivo, só o cabeçalho em memória, e responde igual ao `OutputFile.new(bytes)` com qualquer tamanho de trecho (`chunk_bytes`), em sequência e em Ractors; `to_csv(kind, io)` igual ao `String`; `each_period`; arquivo apagado (`the .out is gone`) ou cortado durante a leitura (`OutputFormatError`); `Swmm.run` sem `dir:` carrega o `.out` inteiro |
+| `time_step_test.rb` | `Swmm::TimeStep`: segundos, `hh:mm:ss`, fração de segundo, `parse`/`from`, comparação, chave de Hash, JSON, e a ida e volta pelo `Swmm::Input` (`report_step`, `routing_step`, `minimum_step`, `interval`) |
+| `model_test.rb` | `Swmm::Model` (o que `Input.read`/`parse` devolvem): continua sendo o Hash do `Input`, conta objetos por tipo e no total igual ao `.out`, e conta um Hash próprio (chaves String, linhas cruas, tipos sem objetos) |
+| `options_test.rb` | `Swmm::Options`: uma constante por valor que o `Input` aceita (`FlowUnits`, `FlowRouting`, `SurchargeMethod`), igual ao que o relatório lê, e `NameError` para um valor que não existe |
 
 ## 2. Riscos e lacunas
 
@@ -64,7 +68,7 @@ Regras para quem testa:
 
 ## 6. Resultados (2026-10-16)
 
-Suíte: **203 execuções, 30 523 asserts, 0 falhas, 2 pulados**, em macOS arm64, Linux aarch64 (Docker, 3 rodadas) e Linux x86_64 (Debian 13, 3 rodadas), Ruby 4.0.7, com a `libswmm5` da EPA sem alterações. Depois de `node_flooding` e das verificações do `Swmm.read` (2026-10-22): **214 execuções, 30 594 asserts, 0 falhas, 2 pulados**; com o leitor de `.inp`: **228 execuções, 30 633 asserts, 0 falhas, 2 pulados**, só em Linux aarch64 (Ruby 4.0.7). Com `Swmm::Report` e `Swmm::Variables`: **239 execuções, 30 678 asserts, 0 falhas, 2 pulados**, só em macOS arm64 (Ruby 4.0.7). Os 2 pulados são os dois bugs conhecidos do motor (`KnownEngineBugsTest`, [`known-issues.md`](known-issues.md)): descrevem o comportamento correto e falham com o motor como é lançado; `SWMM_SHOW_BUGS=1` os executa. Todos os outros defeitos da lista abaixo foram corrigidos.
+Suíte: **203 execuções, 30 523 asserts, 0 falhas, 2 pulados**, em macOS arm64, Linux aarch64 (Docker, 3 rodadas) e Linux x86_64 (Debian 13, 3 rodadas), Ruby 4.0.7, com a `libswmm5` da EPA sem alterações. Depois de `node_flooding` e das verificações do `Swmm.read` (2026-10-22): **214 execuções, 30 594 asserts, 0 falhas, 2 pulados**; com o leitor de `.inp`: **228 execuções, 30 633 asserts, 0 falhas, 2 pulados**, só em Linux aarch64 (Ruby 4.0.7). Com `Swmm::Report` e `Swmm::Variables`: **239 execuções, 30 678 asserts, 0 falhas, 2 pulados**, só em macOS arm64 (Ruby 4.0.7). Com a leitura do `.out` em streaming, `Swmm::TimeStep`, `Swmm::Model` e `Swmm::Options`: **262 execuções, 30 907 asserts, 0 falhas, 2 pulados**, só em macOS arm64 (Ruby 4.0.7). Os 2 pulados são os dois bugs conhecidos do motor (`KnownEngineBugsTest`, [`known-issues.md`](known-issues.md)): descrevem o comportamento correto e falham com o motor como é lançado; `SWMM_SHOW_BUGS=1` os executa. Todos os outros defeitos da lista abaixo foram corrigidos.
 
 | frente | arquivo | testes | defeitos reproduzidos |
 |---|---|---|---|

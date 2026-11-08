@@ -171,7 +171,7 @@ class EpaExample1Test < Minitest::Test
     assert_equal "ft", @out.units[:nodes]["depth"], "unit system SMO_US"
     assert_equal "in/h", @out.units[:subcatchments]["rainfall"]
     assert_equal 36, @out.periods # test_getTimes SMO_numPeriods
-    assert_equal 3600, @out.report_step # test_getTimes SMO_reportStep
+    assert_equal 3600, @out.report_step.in_seconds # test_getTimes SMO_reportStep
     assert_equal Time.utc(1998, 1, 1), @out.start # test_getStartDate: 35796.0 days since 1899-12-30
     assert_equal (Time.utc(1998, 1, 1) + 3600), @out.times.first
     assert_equal Time.utc(1998, 1, 2, 12), @out.times.last, "36 periods of 1 h after the start"
@@ -212,6 +212,47 @@ class EpaExample1Test < Minitest::Test
     links: [29_408.2135, 4418.14009, 67_986.6882, 1_421_569.67, 1918.51409, 389_519.254, 77_903.8507],
     system: [46_620, 22.7500003, 0, 14.8531609, 704.942831, 0, 0, 0, 0, 704.942831, 22.4812745, 686.429877, 176_337.893, 0]
   }.freeze
+
+  def test_node_and_link_types_the_input_block_saves
+    assert_equal({ "JUNCTION" => 13, "OUTFALL" => 1 }, @out.types(:nodes).values.tally)
+    assert_equal "OUTFALL", @out.types(:nodes)["18"]
+    assert_equal({ "CONDUIT" => 13 }, @out.types(:links).values.tally)
+    assert_equal @out.ids[:nodes], @out.types(:nodes).keys
+    assert_equal({ subcatchments: 8, nodes: 14, links: 13, pollutants: 2 }, @out.counts)
+    assert_equal({ "JUNCTION" => 13, "OUTFALL" => 1 }, @out.count_nodes)
+    assert_equal({ "CONDUIT" => 13 }, @out.count_links)
+    assert_equal [13, 1, 0, 13, 0], [@out.count_nodes_junction, @out.count_nodes_outfall, @out.count_nodes_storage, @out.count_links_conduit, @out.count_links_pump]
+    assert_equal [14, 13, 8, 2], [@out.total_nodes, @out.total_links, @out.total_subcatchments, @out.total_pollutants]
+    assert_equal "subcatchments have no type", assert_raises(Swmm::UnknownObject) { @out.types(:subcatchments) }.message
+    assert_raises(Swmm::UnknownObject) { @out.types(:system) }
+  end
+
+  def test_frames_give_a_row_per_period_what_all_series_gives_per_object
+    Swmm::OutputFile::KINDS.each do |kind|
+      ids = kind == :system ? ["system"] : @out.ids[kind]
+      all = @out.all_series(kind)
+      @out.variables[kind].each do |name|
+        frames = @out.frames(kind, name)
+        assert_equal @out.times.size, frames.size, "#{kind} #{name}"
+        assert_equal ids.map { all[_1][name] }, frames.transpose, "#{kind} #{name}"
+      end
+    end
+  end
+
+  def test_frames_read_from_the_file_a_span_at_a_time_are_the_same
+    saved = Swmm::OutputFile.chunk_bytes
+    Swmm::OutputFile.chunk_bytes = 1 # a period per span
+    file = Swmm::OutputFile.read(FILE)
+    assert_equal @out.frames(:links, :flow), file.frames(:links, :flow)
+    assert_equal @out.frames(:nodes, "depth"), file.frames(:nodes, "depth")
+  ensure
+    Swmm::OutputFile.chunk_bytes = saved
+  end
+
+  def test_frames_fail_loudly_on_what_the_file_does_not_have
+    assert_match(/links has no variable :nope/, assert_raises(Swmm::UnknownObject) { @out.frames(:links, :nope) }.message)
+    assert_match(/unknown kind :pipes/, assert_raises(Swmm::UnknownObject) { @out.frames(:pipes, :flow) }.message)
+  end
 
   def test_every_value_of_the_file_agrees_with_epas_libswmm_output
     GOLDEN_SUMS.each do |kind, sums|
@@ -371,7 +412,7 @@ class EngineOracleTest < Minitest::Test
         assert_equal first, result.times.first.strftime("%H:%M"), "#{label}: first period is the first step at or after report_start"
         assert_equal Time.utc(2026, 3, 24, 2), result.times.last, label
         assert_equal [minutes * 60.0], result.times.each_cons(2).map { _2 - _1 }.uniq, label
-        assert_equal minutes * 60, result.output.report_step, label
+        assert_equal minutes * 60, result.output.report_step.in_seconds, label
         stamps = Oracle.tables(oracle.report, "Node")["J1"].map(&:first)
         assert_equal result.times, stamps, "#{label}: dates of the report table"
         # the series of the periods that exist are still the engine's values
@@ -544,8 +585,9 @@ class EngineOracleTest < Minitest::Test
 
   def test_every_flow_unit_is_reported_consistently_by_the_gem_the_engine_and_the_report
     results = {}
-    PEAK.each_key do |unit|
-      Dir.mktmpdir do |dir|
+    Dir.mktmpdir do |root| # the results read their .out as they are used: the files stay until the end
+      PEAK.each_key do |unit|
+        dir = FileUtils.mkdir_p(File.join(root, unit)).first
         result, oracle = both(model_in(unit), dir)
         results[unit] = result
         si = %w[LPS CMS MLD].include?(unit)
@@ -565,13 +607,13 @@ class EngineOracleTest < Minitest::Test
         near PEAK[unit], result.series(:nodes, "J1", :lateral_inflow).max, rel: 5e-3, msg: "#{unit}: peak of the hydrograph in the unit"
         compare_with_saved(result, oracle)
       end
-    end
-    # same network, flows scaled by the unit conversion: depths agree, flows scale (factors: cfs->unit, 1 cfs = 448.831 gpm ...)
-    { "GPM" => 448.831, "MGD" => 0.646317 }.each do |unit, k|
-      assert_series_scaled results["CFS"], results[unit], k
-    end
-    { "CMS" => 0.001, "MLD" => 0.0864 }.each do |unit, k|
-      assert_series_scaled results["LPS"], results[unit], k
+      # same network, flows scaled by the unit conversion: depths agree, flows scale (factors: cfs->unit, 1 cfs = 448.831 gpm ...)
+      { "GPM" => 448.831, "MGD" => 0.646317 }.each do |unit, k|
+        assert_series_scaled results["CFS"], results[unit], k
+      end
+      { "CMS" => 0.001, "MLD" => 0.0864 }.each do |unit, k|
+        assert_series_scaled results["LPS"], results[unit], k
+      end
     end
   end
 

@@ -12,7 +12,7 @@ module Swmm
   #                                 optional column was given too
   #   trailing Hash                 count: n | range | [n, m] -> list column (an Array of that many values)
   #                                 only:  [:other, %w[A B]] -> column exists only for those values of :other
-  # type: :id :opt_id :any :text :num :int :yn :date :time :seconds :monthday (see Swmm::Types),
+  # type: :id :opt_id :any :text :num :int :yn :date :time :step :seconds :decimal_seconds :monthday (see Swmm::Types),
   #       or an Array of allowed words.
   module Schema
     Column = Struct.new(:name, :type, :default, :required, :list, :only)
@@ -58,9 +58,9 @@ module Swmm
       start_date: :date, end_date: :date, report_start_date: :date,
       start_time: :time, end_time: :time, report_start_time: :time,
       sweep_start: :monthday, sweep_end: :monthday, dry_days: :num,
-      report_step: :time, wet_step: :time, dry_step: :time, rule_step: :time,
+      report_step: :step, wet_step: :step, dry_step: :step, rule_step: :step,
       routing_step: :seconds, lengthening_step: :seconds, variable_step: :num, min_surfarea: :num,
-      min_slope: :num, head_tolerance: :num, sys_flow_tol: :num, lat_flow_tol: :num, minimum_step: :num,
+      min_slope: :num, head_tolerance: :num, sys_flow_tol: :num, lat_flow_tol: :num, minimum_step: :decimal_seconds,
       max_trials: :int, threads: :int, tempdir: :id, compatibility: %w[3 4 5]
     }.freeze
 
@@ -75,7 +75,7 @@ module Swmm
 
       # --- climate & hydrology
       raingages: rows(
-        [:name, :id], [:format, %w[INTENSITY VOLUME CUMULATIVE]], [:interval, :time], [:snow_catch_factor, :num, 1],
+        [:name, :id], [:format, %w[INTENSITY VOLUME CUMULATIVE]], [:interval, :step], [:snow_catch_factor, :num, 1],
         [:source, %w[TIMESERIES FILE]], [:series, :id, { only: [:source, %w[TIMESERIES]] }],
         [:path, :id, { only: [:source, %w[FILE]] }], [:station, :id, { only: [:source, %w[FILE]] }],
         [:units, %w[IN MM], { only: [:source, %w[FILE]] }], [:start_date, :date, nil, { only: [:source, %w[FILE]] }]
