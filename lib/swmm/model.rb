@@ -13,8 +13,8 @@ module Swmm
   # A Hash of your own becomes one with Swmm::Model[hash] (keys may be Symbols or Strings).
   class Model < Hash
     # the section of each node / link type, in the order of OutputFile::TYPES
-    NODE_SECTIONS = { "JUNCTION" => :junctions, "OUTFALL" => :outfalls, "STORAGE" => :storage, "DIVIDER" => :dividers }.freeze
-    LINK_SECTIONS = { "CONDUIT" => :conduits, "PUMP" => :pumps, "ORIFICE" => :orifices, "WEIR" => :weirs, "OUTLET" => :outlets }.freeze
+    NODE_SECTIONS = { 'JUNCTION' => :junctions, 'OUTFALL' => :outfalls, 'STORAGE' => :storage, 'DIVIDER' => :dividers }.freeze
+    LINK_SECTIONS = { 'CONDUIT' => :conduits, 'PUMP' => :pumps, 'ORIFICE' => :orifices, 'WEIR' => :weirs, 'OUTLET' => :outlets }.freeze
 
     def count_nodes = count_sections(NODE_SECTIONS)
     def count_links = count_sections(LINK_SECTIONS)
@@ -33,8 +33,6 @@ module Swmm
     def total_links = count_links.values.sum
     def total_subcatchments = rows(:subcatchments)
     def total_pollutants = rows(:pollutants)
-    alias_method :count_subcatchments, :total_subcatchments
-    alias_method :count_pollutants, :total_pollutants
 
     private
 

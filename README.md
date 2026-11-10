@@ -5,6 +5,10 @@ Roda simulações do **EPA SWMM 5** a partir de Ruby (FFI sobre a `libswmm5`).
 - **Entrada:** um modelo SWMM como Hash/JSON (as seções do `.inp` em minúsculas) ou o caminho de um `.inp`; **ou** os arquivos que o SWMM já gerou (`.rpt` e `.out`). Um `.inp` também pode ser lido para esse Hash (`Swmm::Input.read`).
 - **Saída:** um `Swmm::Result` com status, erro do motor, avisos, erro de continuidade e todas as séries temporais salvas, exportável para Hash, JSON e CSV.
 
+Documentação da API (YARD): https://alexcastrodev.github.io/swmm-ruby/
+
+A API pública é `Swmm`, `Swmm::Input`, `Swmm::Result`, `Swmm::Report`, `Swmm::OutputFile`, `Swmm::Collection`, `Swmm::Element`, `Swmm::Series`, `Swmm::Frames`, `Swmm::Record`, `Swmm::Model`, `Swmm::Variables`, `Swmm::Options`, `Swmm::TimeStep` e os erros. São só a fachada, com os comentários em YARD: cada uma chama um serviço interno, que é onde está a lógica (`Swmm::Runner`, `Swmm::Input::Renderer` / `Input::Parser`, `Swmm::Report::Parser`, `Swmm::OutputReader`, `Swmm::ResultFiles`, `Swmm::Engine`, `Swmm::Schema`); esses podem mudar sem aviso.
+
 ```ruby
 require "swmm"
 
@@ -20,22 +24,23 @@ result = Swmm.run(
 )
 
 result.ok?                                   # => true
-result.series(:links, "C1", :flow)           # => [15.2, 32.0, ...] um valor por período, alinhado com result.times
+result.links["C1"][:flow].values             # => [15.2, 32.0, ...] um valor por período, alinhado com result.times
 result.to_json                               # tudo, como dado puro
 ```
 
 ## Instalação
 
-Ruby **4.0+**.
+Ruby **4.0+**. Ler `.rpt`/`.out` (`Swmm.read`, `Swmm::Input.parse`) só precisa do `ffi`; **rodar** simulações precisa da `libswmm5`.
 
 ```sh
-bundle install
 brew install libomp        # só macOS (o clang da Apple não traz OpenMP)
-rake swmm:build            # clona e compila o SWMM da EPA (SWMM_VERSION=v5.2.4) -> vendor/swmm/libswmm5.*
+bundle install
+rake swmm:build            # clona e compila o SWMM da EPA (SWMM_VERSION=v5.2.4; precisa de git e cmake) -> vendor/swmm/libswmm5.*
 ```
 
 Ou aponte `SWMM_LIB=/caminho/libswmm5.so` para uma lib já compilada. Alvo: SWMM **5.2.4**.
-Em Linux, sem instalar nada: `docker build -t swmm-ruby . && docker run --rm swmm-ruby` (compila a lib e roda os testes).
+
+Em Linux, sem instalar nada: `docker build -t swmm-ruby . && docker run --rm swmm-ruby` (compila a lib e roda os specs).
 
 ## Entrada — `Swmm::Input`
 
@@ -90,16 +95,48 @@ result.to_h  # =>
   output: {
     flow_units: "LPS", start: "2026-03-24T00:00:00", report_step: 600, periods: 12,
     times: ["2026-03-24T00:10:00", ...],
-    units: { nodes: { "depth" => "m", "total_inflow" => "LPS", ... }, links: {...}, subcatchments: {...}, system: {...} },
-    subcatchments: { "S1" => { "rainfall" => [...], "runoff" => [...], "quality:TSS" => [...] } },
-    nodes:         { "J1" => { "depth" => [...], "head" => [...], "volume" => [...], "lateral_inflow" => [...], "total_inflow" => [...], "overflow" => [...] } },
-    links:         { "C1" => { "flow" => [...], "depth" => [...], "velocity" => [...], "volume" => [...], "capacity" => [...] } },
-    system:        { "system" => { "total_inflow" => [...], "flooding" => [...], "outflow" => [...], ... } }
+    units: { nodes: { depth: "m", total_inflow: "LPS", ... }, links: {...}, subcatchments: {...}, system: {...} },
+    subcatchments: { "S1" => { rainfall: [...], runoff: [...], "quality:TSS": [...] } },
+    nodes:         { "J1" => { depth: [...], head: [...], volume: [...], lateral_inflow: [...], total_inflow: [...], overflow: [...] } },
+    links:         { "C1" => { flow: [...], depth: [...], velocity: [...], volume: [...], capacity: [...] } },
+    system:        { "system" => { total_inflow: [...], flooding: [...], outflow: [...], ... } }
   }
 }
 ```
 
-Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `ids(kind)`, `types(:nodes | :links)`, `counts`, `count_nodes`, `count_links`, `count_nodes_<tipo>` / `count_links_<tipo>`, `total_nodes` / `total_links` / `total_subcatchments` / `total_pollutants`, `count_subcatchments`, `count_pollutants`, `variables(kind)`, `series(kind, id, variable)`, `to_h(series: false)`, `to_json`, `to_csv(:nodes)` (`time,id,<variáveis>`). `kind` = `:subcatchments | :nodes | :links | :system`; as variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um `kind`, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
+Acessores: `ok?`, `error`, `warnings`, `continuity`, `continuity_ok?(tolerance: 5)`, `flow_instability`, `node_flooding`, `analysis_options`, `report_start`, `report` (texto do `.rpt`), `times`, `to_h(series: false)`, `to_json`, e os objetos de cada tipo: `subcatchments`, `nodes`, `links`, `system` (ou `result[:links]`), cada um um `Swmm::Collection` (abaixo). Sem resultados (`ok?` falso), pedir os objetos levanta `Swmm::Error`.
+
+### Os valores — `Swmm::Collection`
+
+Cada tipo de objeto que o `.out` guardou (`result.links`, `output.nodes`, …) é uma `Swmm::Collection`. Os tipos e as variáveis são Symbols (também aceitam String) e os ids são Strings. Um valor que o motor não conseguiu calcular (NaN / infinito) vem `nil`.
+
+```ruby
+links = result.links
+links.ids                  # ["C1", "C2", ...] (o sistema tem um: "system")
+links.variables            # [:flow, :depth, :velocity, :volume, :capacity] (+ :"quality:TSS", ... por poluente)
+links.units                # { flow: "LPS", depth: "m", ... };  links.unit(:depth)  # "m"
+links.types                # { "C1" => "CONDUIT", ... } (só nós e links)
+links.count_by_type        # { "CONDUIT" => 607, "PUMP" => 1 }
+links.size                 # 608; each / map / find / count percorrem os objetos (Swmm::Element)
+
+link = links["C1"]         # Swmm::Element: id, kind, type
+link[:flow]                # Swmm::Series: values, times, unit, kind, id, variable
+link[:flow].to_h           # { Time => valor }; each / map / select percorrem pares [time, valor]
+link.series                # { flow: Series, depth: Series, ... }
+
+links.frames(:depth)       # Swmm::Frames: rows[período][objeto], ids, times, unit (uma variável, como o mapa a toca)
+links.records              # Enumerator de Swmm::Record, um por período e objeto (por tempo, depois pela ordem de ids)
+links.records.first        # #<Swmm::Record time=..., id="C1", flow=0.12, depth=0.3, ...>
+links.records.first.to_h   # { time:, id:, flow:, depth:, ... };  row.flow / row[:"quality:TSS"] / row.values
+links.to_h                 # { "C1" => { flow: [...], depth: [...], ... }, ... } (tudo em memória)
+links.to_csv               # "time,id,<variáveis>" + uma linha por Record;  links.to_csv(io) escreve aos bocados
+```
+
+```ruby
+links.records.each_slice(5_000) { |rows| LinkResult.insert_all(rows.map(&:to_h)) }   # tabela, memória constante
+```
+
+As variáveis também existem como constantes (`Swmm::Variables::Links::FLOW`, `Swmm::Variables::Nodes::DEPTH`, …), para um erro de digitação ser `NameError` ao carregar; um tipo, id ou variável que os resultados não têm levanta `Swmm::UnknownObject` (um `Swmm::Error`).
 
 ### Alagamentos — `node_flooding`
 
@@ -145,11 +182,11 @@ model.count_links_conduit   # 607 (um tipo: count_nodes_junction / _outfall / _s
                             #  count_links_conduit / _pump / _orifice / _weir / _outlet; 0 sem nenhum)
 model.total_nodes           # 609
 model.total_links           # 608
-model.total_subcatchments   # 0 (também count_subcatchments)
-model.total_pollutants      # 0 (também count_pollutants)
+model.total_subcatchments   # 0
+model.total_pollutants      # 0
 ```
 
-O `OutputFile` (e o `Result`) têm os mesmos métodos, mas contam só o que o `.out` guardou: os objetos que o `[REPORT]` lista (`NODES ALL` / `LINKS ALL` guardam todos).
+No `.out` (e no `Result`) as contagens são as das coleções, `output.nodes.count_by_type` e `output.nodes.size`, e contam só o que o `.out` guardou: os objetos que o `[REPORT]` lista (`NODES ALL` / `LINKS ALL` guardam todos).
 
 ### Só um dos arquivos — `Swmm::Report.read` / `Swmm::OutputFile.read`
 
@@ -162,16 +199,13 @@ report.node_flooding                        # max_elapsed; max_time é nil: o re
 report.node_flooding(start: result.report_start)   # com max_time, como result.node_flooding
 report.text                                 # o texto do .rpt
 
-output = Swmm::OutputFile.read("modelo.out")
-output.times / start_time / end_time / ids / variables / series(:links, "C1", :flow) / all_series(:links) / each_period(:links) / units
-output.frames(:links, :flow)        # [[valor de cada link no período 0], [... período 1], ...]: uma variável, uma linha por período
-output.types(:nodes)                # { "J1" => "JUNCTION", "O1" => "OUTFALL", ... } (JUNCTION OUTFALL STORAGE DIVIDER)
-output.types(:links)                # { "C1" => "CONDUIT", ... } (CONDUIT PUMP ORIFICE WEIR OUTLET)
-output.counts                       # { subcatchments: 0, nodes: 609, links: 608, pollutants: 0 }
-output.count_nodes                  # { "JUNCTION" => 605, "OUTFALL" => 1, "STORAGE" => 3 }: totais por tipo
-output.count_links                  # { "CONDUIT" => 607, "PUMP" => 1 }
-output.count_links_pump             # 1 (um tipo, como no Model: count_nodes_junction ... count_links_outlet)
-output.total_nodes                  # 609 (também total_links, total_subcatchments, total_pollutants; count_subcatchments e count_pollutants são os mesmos dois últimos)
+output = Swmm::OutputFile.read("modelo.out")    # ou Swmm::OutputFile.new(bytes: File.binread("modelo.out"))
+output.times / start_time / end_time / periods / report_step / flow_units / pollutants / engine_version
+output.subcatchments / nodes / links / system   # Swmm::Collection (acima); também output[:links]
+output.nodes.types                  # { "J1" => "JUNCTION", "O1" => "OUTFALL", ... } (JUNCTION OUTFALL STORAGE DIVIDER)
+output.links.types                  # { "C1" => "CONDUIT", ... } (CONDUIT PUMP ORIFICE WEIR OUTLET)
+output.nodes.count_by_type          # { "JUNCTION" => 605, "OUTFALL" => 1, "STORAGE" => 3 }: totais por tipo
+output.nodes.size                   # 609 (também links.size, subcatchments.size; output.pollutants.size)
 
 result.rpt     # => Swmm::Report        (result.report continua sendo o texto)
 result.output  # => Swmm::OutputFile
@@ -179,13 +213,13 @@ result.output  # => Swmm::OutputFile
 
 #### Memória: o `.out` é lido do ficheiro, à medida
 
-`Swmm::OutputFile.read(path)` só guarda em memória o cabeçalho (ids, tipos, unidades, datas: poucos KB) e lê os valores do ficheiro quando pedidos, `Swmm::OutputFile.chunk_bytes` (8 MB) de cada vez. O ficheiro tem de ficar lá enquanto o leitor é usado (se sumir: `Swmm::Error` "the .out is gone"; se mudar a meio: `Swmm::OutputFormatError`). `Swmm::OutputFile.new(File.binread(path))` lê tudo para memória, como antes. `Swmm.run(dir:)` e `Swmm.read` leem do ficheiro; `Swmm.run` sem `dir:` carrega o `.out` inteiro (o diretório temporário é apagado no fim).
+`Swmm::OutputFile.read(path)` só guarda em memória o cabeçalho (ids, tipos, unidades, datas: poucos KB) e lê os valores do ficheiro quando pedidos, `Swmm::OutputFile.chunk_bytes` (8 MB) de cada vez. O ficheiro tem de ficar lá enquanto o leitor é usado (se sumir: `Swmm::Error` "the .out is gone"; se mudar a meio: `Swmm::OutputFormatError`). `Swmm::OutputFile.new(bytes: File.binread(path))` lê tudo para memória. `Swmm.run(dir:)` e `Swmm.read` leem do ficheiro; `Swmm.run` sem `dir:` carrega o `.out` inteiro (o diretório temporário é apagado no fim).
 
-O que cada chamada devolve fica em memória: `series` (uma série) é pequeno, `all_series` de um tipo grande e `to_csv` em String são grandes. Para percorrer tudo sem os segurar:
+O que cada chamada devolve fica em memória: uma `Series` é pequena, `frames` de uma variável é médio, `to_h` de um tipo grande e `to_csv` em String são grandes. Para percorrer tudo sem os segurar:
 
 ```ruby
-output.each_period(:links) { |time, values| values["C1"]["flow"] }   # um período de cada vez (Enumerator sem bloco)
-File.open("links.csv", "w") { |io| result.to_csv(:links, io) }       # escrito aos bocados, nunca inteiro em memória
+output.links.records.each { |row| row.flow }                     # um período de cada vez (Enumerator sem bloco)
+File.open("links.csv", "w") { |io| result.links.to_csv(io) }     # escrito aos bocados, nunca inteiro em memória
 ```
 
 Num `.out` de 116 MB (609 nós, 608 links, 4321 períodos):
@@ -193,12 +227,12 @@ Num `.out` de 116 MB (609 nós, 608 links, 4321 períodos):
 | | ler do ficheiro | antes (tudo em memória) |
 | --- | --- | --- |
 | abrir (`OutputFile.read`) | ~6 ms, +0 MB | ~500 ms, +116 MB |
-| `counts` / `count_nodes` / `count_links` / `times` | < 1 ms | < 1 ms |
-| `series` de um link | ~5 ms | ~2 ms |
-| `each_period(:links)` | ~6 s, ~40 MB | — |
-| `to_csv(:links, io)` | ~9 s, ~100 MB | — |
-| `to_csv(:links)` String (Ractors) | ~3 s, ~1 GB | igual |
-| `all_series(:links)` (Ractors) | ~1,4 s, ~450 MB | igual |
+| `ids` / `count_by_type` / `times` | < 1 ms | < 1 ms |
+| `links["C1"][:flow]` (uma `Series`) | ~5 ms | ~2 ms |
+| `links.records` (percorrer, medido como `each_period`) | ~6 s, ~40 MB | — |
+| `links.to_csv(io)` | ~9 s, ~100 MB | — |
+| `links.to_csv` String (Ractors) | ~3 s, ~1 GB | igual |
+| `links.to_h` (Ractors) | ~1,4 s, ~450 MB | igual |
 
 `Swmm::Report.read` levanta `Swmm::ReportFormatError` para um arquivo sem o cabeçalho do SWMM; `Swmm::Report.new(texto)` aceita qualquer texto (vazio inclusive). Sem o `.out`, o código de erro sai do relatório (2xx viram `200`).
 
@@ -210,25 +244,26 @@ results = Swmm.run_many([modelo_a, modelo_b, "modelo_c.inp"], workers: 8)   # =>
 
 Cada worker é uma thread com a sua própria cópia do arquivo da lib (o motor tem estado global; a 5.2.4 não tem API reentrante). Levanta `ArgumentError` se `workers` for menor que 1 ou se a entrada não for uma lista (um Hash de modelo sozinho não é). Valida todos os contratos antes de rodar qualquer um, se um worker levanta exceção os outros param e a exceção chega a quem chamou, usa só arquivos temporários (para `dir:` use `Swmm.run`) e exige a lib como arquivo (`SWMM_LIB` ou `rake swmm:build`). Dentro de **uma** simulação não há paralelismo.
 
-`to_h` e `to_csv` leem saídas grandes (a partir de 250 mil valores por tipo) em Ractors; para ajustar ou desligar: `Swmm::OutputFile.ractors = 1`, `Swmm::OutputFile.parallel_from = ...`.
+`result.to_h`, `Collection#to_h` e `Collection#to_csv` leem saídas grandes (a partir de 250 mil valores por tipo) em Ractors; para ajustar ou desligar: `Swmm::OutputFile.ractors = 1`, `Swmm::OutputFile.parallel_from = ...`.
 
 ## Cuidados
 
 - **`ok?` só diz que o motor terminou**, não que o modelo é bom: um modelo instável termina sem erro. Confira `continuity_ok?` e `flow_instability`.
-- **`[REPORT]` decide o que é gravado**: só subcatchments, nós e condutas listados (`"ALL"` ou ids) entram em `output`; o sistema sempre entra. Sem isso, `result.ids(:nodes)` fica vazio.
+- **`[REPORT]` decide o que é gravado**: só subcatchments, nós e condutas listados (`"ALL"` ou ids) entram em `output`; o sistema sempre entra. Sem isso, `result.nodes.ids` fica vazio.
 - Caminhos relativos em `files` e `timeseries file` são resolvidos pelo motor a partir da pasta do `.inp`; com `Swmm.run(hash)` use caminhos absolutos.
 - O motor lê no máximo 40 itens e 1023 **bytes** por linha e descarta o resto em silêncio; o contrato recusa linhas assim. Também recusa nomes e linhas que começam com `[` (o motor leria como início de seção) e qualquer texto com quebra de linha ou NUL.
 - **Nomes de objeto não podem ter espaços** (nem as referências a eles): o motor conta os objetos numa primeira passada que ignora aspas, então um nome como `"J 1"` nunca poderia ser usado. Caminhos, tags, rótulos e nomes de regra podem ter espaços (vão entre aspas). Textos devem ser UTF-8: UTF-16, Latin-1 e binário com UTF-8 válido são convertidos; o resto é recusado. Chaves que só diferem na caixa (`junctions` e `JUNCTIONS`) são um erro, não uma sobrescrita. Linhas cruas (Array) não distinguem nome de rótulo, então um nome com espaço passa pelo contrato e o motor o recusa.
 - **Bugs conhecidos do motor (SWMM 5.2.4, sem correção na gem):** (1) em cerca de 1 de cada 3 janelas de simulação o último período de relatório não é gravado (contorno: terminar a simulação 1 segundo depois, `end_time: "13:00:01"`); (2) em Linux, um modelo cujo subcatchment usa um snowpack com superfície de área zero dá, em ~2% das execuções idênticas, um resultado errado (continuidade `NaN`; contorno: repetir a simulação). Os dois terminam com `ok? == true`. Causa, como reconhecer e o diff de uma linha de cada um: [`docs/known-issues.md`](docs/known-issues.md).
-- Sem `dir:` (e com `OutputFile.new(bytes)`) o `.out` inteiro fica em memória; com `dir:`, `Swmm.read` e `OutputFile.read` só o cabeçalho (veja Memória). Um crash dentro da lib C derruba o processo.
-- Em Linux o motor cria seus arquivos temporários (`swmmXXXXXX`: RDII, arquivos de chuva) no **diretório atual do processo**, ignorando a opção `tempdir`: com o diretório atual só de leitura, um modelo com RDII termina com `ERROR 341: cannot open scratch RDII interface file`. Nas imagens o diretório atual é `/app`, gravável pelo `app_user`.
+- Sem `dir:` (e com `OutputFile.new(bytes:)`) o `.out` inteiro fica em memória; com `dir:`, `Swmm.read` e `OutputFile.read` só o cabeçalho (veja Memória). Um crash dentro da lib C derruba o processo.
+- Em Linux o motor cria seus arquivos temporários (`swmmXXXXXX`: RDII, arquivos de chuva) no **diretório atual do processo**, ignorando a opção `tempdir`: com o diretório atual só de leitura, um modelo com RDII termina com `ERROR 341: cannot open scratch RDII interface file`.
 
 ## Testes
 
 ```sh
-rake test      # sem libswmm5, os testes que precisam do motor são pulados
+bundle exec rake        # specs; sem libswmm5 os specs :libswmm5 são pulados
+bundle exec rake doc    # documentação YARD em doc/
 ```
 
+- Os specs ficam em `spec/public` (API pública) e `spec/internal` (motor).
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml): a CI compila a `libswmm5` e roda a suíte em Ubuntu (x86_64) e macOS (arm64), e falha se a lib não carregar.
-- [`docs/test-plan.md`](docs/test-plan.md): plano de teste, cobertura e riscos.
-- [`docs/results.md`](docs/results.md): medições de desempenho e verificações por plataforma.
+- [`.github/workflows/docs.yml`](.github/workflows/docs.yml): a cada push na `main` publica a documentação YARD no GitHub Pages.

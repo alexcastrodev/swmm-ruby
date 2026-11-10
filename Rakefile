@@ -1,14 +1,13 @@
 # frozen_string_literal: true
 
-require "rake/testtask"
 require "fileutils"
+require "rspec/core/rake_task"
+require "yard"
 
-Rake::TestTask.new(:test) do |t|
-  t.libs << "test" << "lib"
-  t.pattern = "test/**/*_test.rb"
-end
+RSpec::Core::RakeTask.new(:spec)
+YARD::Rake::YardocTask.new(:doc) # options in .yardopts
 
-task default: :test
+task default: :spec
 
 namespace :swmm do
   desc "Build libswmm5 from the EPA sources into vendor/swmm (SWMM_VERSION=v5.2.4)"

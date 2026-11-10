@@ -72,11 +72,11 @@ Com ela: 0 erros em 1800 execuções no aarch64 e em 600 no x86_64, todas iguais
 ## Como reproduzir
 
 ```sh
-SWMM_SHOW_BUGS=1 rake test        # executa os testes que descrevem o comportamento correto e falham com o motor como é lançado
+SWMM_SHOW_BUGS=1 bundle exec rspec   # executa os specs que descrevem o comportamento correto e falham com o motor como é lançado
 ```
 
-- Bug 1: `KnownEngineBugsTest#test_the_last_reporting_period_is_saved` (falha em qualquer plataforma) e `EngineOracleTest#test_the_period_on_the_end_date_can_be_missing_because_of_the_engine`, que sempre roda e fixa o comportamento atual: se o motor for corrigido, ele falha e avisa que este documento deve ser revisto.
-- Bug 2: `KnownEngineBugsTest#test_a_snowpack_with_a_zero_area_surface_does_not_read_recycled_heap`. Enche de bytes `0xFF` (`NaN` como `double`) blocos que depois libera, para o `malloc` os reciclar: falha em cerca de metade das 24 execuções em Linux aarch64 e x86_64; no macOS passa, porque o `malloc` de lá não recicla os blocos.
+- Bug 1: "Swmm::Engine known bugs of libswmm5 saves the last reporting period" (`spec/internal/swmm/engine_known_bugs_spec.rb`, falha em qualquer plataforma) e "Swmm fidelity to the engine can miss the period on the end date because of the engine" (`spec/public/swmm_fidelity_spec.rb`), que sempre roda e fixa o comportamento atual: se o motor for corrigido, ele falha e avisa que este documento deve ser revisto.
+- Bug 2: "Swmm::Engine known bugs of libswmm5 does not read recycled heap for a snowpack with a zero-area surface". Enche de bytes `0xFF` (`NaN` como `double`) blocos que depois libera, para o `malloc` os reciclar: falha em cerca de metade das 24 execuções em Linux aarch64 e x86_64; no macOS passa, porque o `malloc` de lá não recicla os blocos.
 
 ## Correção preparada (não aplicada na gem)
 
@@ -91,4 +91,4 @@ Nenhum PR foi aberto no repositório da EPA. Para abrir um: <https://github.com/
 
 ## Se você quiser os dois consertos no seu build
 
-A gem não os aplica. Para compilar a lib com eles, use a branch acima (`git clone --branch fix/last-report-period-and-snow-imelt https://github.com/alexcastrodev/Stormwater-Management-Model.git`, `cmake`, e aponte `SWMM_LIB` para a `libswmm5` gerada), ou aplique os dois diffs deste documento ao código da EPA. Com uma lib assim, os testes do bug 1 e do bug 2 passam com `SWMM_SHOW_BUGS=1` e o teste que fixa o bug 1 (`EngineOracleTest`) deixa de passar.
+A gem não os aplica. Para compilar a lib com eles, use a branch acima (`git clone --branch fix/last-report-period-and-snow-imelt https://github.com/alexcastrodev/Stormwater-Management-Model.git`, `cmake`, e aponte `SWMM_LIB` para a `libswmm5` gerada), ou aplique os dois diffs deste documento ao código da EPA. Com uma lib assim, os testes do bug 1 e do bug 2 passam com `SWMM_SHOW_BUGS=1` e o spec que fixa o bug 1 (em `spec/public/swmm_fidelity_spec.rb`) deixa de passar.

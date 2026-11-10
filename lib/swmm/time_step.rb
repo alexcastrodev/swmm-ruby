@@ -52,8 +52,8 @@ module Swmm
     def formatted
       total = in_seconds.abs
       whole = total.floor
-      text = format("%<h>02d:%<m>02d:%<s>02d", h: whole / 3600, m: whole % 3600 / 60, s: whole % 60)
-      text += (total - whole).round(6).to_s.delete_prefix("0") unless whole?
+      text = format('%<h>02d:%<m>02d:%<s>02d', h: whole / 3600, m: whole % 3600 / 60, s: whole % 60)
+      text += (total - whole).round(6).to_s.delete_prefix('0') unless whole?
       in_seconds.negative? ? "-#{text}" : text
     end
 

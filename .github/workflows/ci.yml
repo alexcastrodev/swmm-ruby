@@ -58,4 +58,4 @@ jobs:
           '
 
       - name: Tests
-        run: bundle exec rake test
+        run: bundle exec rake spec

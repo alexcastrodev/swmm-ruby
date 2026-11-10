@@ -1,0 +1,5 @@
+--output-dir doc
+--readme README.md
+lib/**/*.rb
+-
+docs/*.md

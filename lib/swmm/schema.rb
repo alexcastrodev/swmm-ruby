@@ -34,14 +34,14 @@ module Swmm
     end
 
     # named object spread over several lines: an optional head line plus keyword-led parts
-    def self.block(head: nil, parts:)
+    def self.block(parts:, head: nil)
       Section.new(:block, nil, head: head && cols(head), parts: parts.transform_values { |kw, defs| [kw, cols(defs)] })
     end
 
     FLOW_UNITS = %w[CFS GPM MGD CMS LPS MLD].freeze
     INFILTRATION = %w[HORTON MODIFIED_HORTON GREEN_AMPT MODIFIED_GREEN_AMPT CURVE_NUMBER].freeze
     CURVE_TYPES = %w[STORAGE DIVERSION TIDAL RATING CONTROL SHAPE WEIR PUMP1 PUMP2 PUMP3 PUMP4 PUMP5].freeze
-    PATTERN_SIZES = { "MONTHLY" => 12, "DAILY" => 7, "HOURLY" => 24, "WEEKEND" => 24 }.freeze
+    PATTERN_SIZES = { 'MONTHLY' => 12, 'DAILY' => 7, 'HOURLY' => 24, 'WEEKEND' => 24 }.freeze
     SHAPES = %w[DUMMY CIRCULAR FILLED_CIRCULAR RECT_CLOSED RECT_OPEN TRAPEZOIDAL TRIANGULAR PARABOLIC POWER
                 RECT_TRIANGULAR RECT_ROUND MODBASKETHANDLE HORIZ_ELLIPSE VERT_ELLIPSE ARCH EGG HORSESHOE GOTHIC
                 CATENARY SEMIELLIPTICAL BASKETHANDLE SEMICIRCULAR IRREGULAR CUSTOM FORCE_MAIN STREET].freeze
@@ -65,7 +65,7 @@ module Swmm
     }.freeze
 
     NODE_ONLY = ->(*types) { { only: [:type, types] } }
-    LAYER_NUMBERS = ->(*names) { names.map { [_1, :num] } }
+    LAYER_NUMBERS = ->(*names) { names.map { [it, :num] } }
 
     # Canonical order = order sections are written to the .inp.
     SECTIONS = {
@@ -83,11 +83,11 @@ module Swmm
       temperature: keywords(
         timeseries: [[:series, :id]],
         file: [[:path, :id], [:start_date, :date, nil], [:units, %w[C10 C F], nil]],
-        windspeed_monthly: ["WINDSPEED MONTHLY", [[:values, :num, { count: 12 }]]],
-        windspeed_file: ["WINDSPEED FILE", []],
+        windspeed_monthly: ['WINDSPEED MONTHLY', [[:values, :num, { count: 12 }]]],
+        windspeed_file: ['WINDSPEED FILE', []],
         snowmelt: [[:values, :num, { count: 6 }]],
-        adc_impervious: ["ADC IMPERVIOUS", [[:values, :num, { count: 10 }]]],
-        adc_pervious: ["ADC PERVIOUS", [[:values, :num, { count: 10 }]]]
+        adc_impervious: ['ADC IMPERVIOUS', [[:values, :num, { count: 10 }]]],
+        adc_pervious: ['ADC PERVIOUS', [[:values, :num, { count: 10 }]]]
       ),
       evaporation: keywords(
         constant: [[:value, :num]], monthly: [[:values, :num, { count: 12 }]], timeseries: [[:series, :id]],
@@ -97,7 +97,7 @@ module Swmm
       adjustments: keywords(
         temperature: [[:values, :num, { count: 12 }]], evaporation: [[:values, :num, { count: 12 }]],
         rainfall: [[:values, :num, { count: 12 }]], conductivity: [[:values, :num, { count: 12 }]],
-        n_perv: ["N-PERV", [[:subcatchment, :id], [:pattern, :id]]],
+        n_perv: ['N-PERV', [[:subcatchment, :id], [:pattern, :id]]],
         dstore: [[:subcatchment, :id], [:pattern, :id]],
         infil: [[:subcatchment, :id], [:pattern, :id]]
       ),
@@ -107,7 +107,7 @@ module Swmm
       ),
       subareas: rows(
         [:subcatchment, :id], [:n_imperv, :num], [:n_perv, :num], [:storage_imperv, :num], [:storage_perv, :num],
-        [:pct_zero_storage, :num], [:route_to, %w[OUTLET IMPERVIOUS PERVIOUS], "OUTLET"], [:pct_routed, :num, 100]
+        [:pct_zero_storage, :num], [:route_to, %w[OUTLET IMPERVIOUS PERVIOUS], 'OUTLET'], [:pct_routed, :num, 100]
       ),
       # params: HORTON/MODIFIED_HORTON max_rate min_rate decay dry_time [max_volume];
       #         GREEN_AMPT/MODIFIED_GREEN_AMPT suction conductivity initial_deficit;
@@ -121,20 +121,16 @@ module Swmm
       ),
       groundwater: rows(
         [:subcatchment, :id], [:aquifer, :id], [:node, :id], [:surface_elevation, :num], [:a1, :num], [:b1, :num],
-        [:a2, :num], [:b2, :num], [:a3, :num], [:fixed_depth, :num], [:node_elevation, :any, "*"], # the engine requires this 11th token ("*" = node invert)
+        [:a2, :num], [:b2, :num], [:a3, :num], [:fixed_depth, :num], [:node_elevation, :any, '*'], # the engine requires this 11th token ("*" = node invert)
         [:bottom_elevation, :any, nil], [:water_table_elevation, :any, nil], [:upper_moisture, :any, nil]
       ),
       gwf: rows([:subcatchment, :id], [:flow, %w[LATERAL DEEP]], [:expression, :text]),
       snowpacks: block(parts: {
-        plowable: ["PLOWABLE", LAYER_NUMBERS.(:min_melt_coeff, :max_melt_coeff, :base_temp, :free_water_fraction,
-                                              :initial_depth, :initial_free_water, :depth_at_full_cover)],
-        impervious: ["IMPERVIOUS", LAYER_NUMBERS.(:min_melt_coeff, :max_melt_coeff, :base_temp, :free_water_fraction,
-                                                  :initial_depth, :initial_free_water, :depth_at_full_cover)],
-        pervious: ["PERVIOUS", LAYER_NUMBERS.(:min_melt_coeff, :max_melt_coeff, :base_temp, :free_water_fraction,
-                                              :initial_depth, :initial_free_water, :depth_at_full_cover)],
-        removal: ["REMOVAL", LAYER_NUMBERS.(:plow_depth, :fraction_out, :fraction_impervious, :fraction_pervious,
-                                            :fraction_melt, :fraction_to_subcatchment) + [[:subcatchment, :id, nil]]]
-      }),
+                         plowable: ['PLOWABLE', LAYER_NUMBERS.call(:min_melt_coeff, :max_melt_coeff, :base_temp, :free_water_fraction, :initial_depth, :initial_free_water, :depth_at_full_cover)],
+                         impervious: ['IMPERVIOUS', LAYER_NUMBERS.call(:min_melt_coeff, :max_melt_coeff, :base_temp, :free_water_fraction, :initial_depth, :initial_free_water, :depth_at_full_cover)],
+                         pervious: ['PERVIOUS', LAYER_NUMBERS.call(:min_melt_coeff, :max_melt_coeff, :base_temp, :free_water_fraction, :initial_depth, :initial_free_water, :depth_at_full_cover)],
+                         removal: ['REMOVAL', LAYER_NUMBERS.call(:plow_depth, :fraction_out, :fraction_impervious, :fraction_pervious, :fraction_melt, :fraction_to_subcatchment) + [[:subcatchment, :id, nil]]]
+                       }),
 
       # --- nodes
       junctions: rows(
@@ -143,8 +139,8 @@ module Swmm
       ),
       outfalls: rows(
         [:name, :id], [:elevation, :num], [:type, %w[FREE NORMAL FIXED TIDAL TIMESERIES]],
-        [:stage_data, :any, NODE_ONLY.("FIXED", "TIDAL", "TIMESERIES")], # stage | tidal curve | time series
-        [:gated, :yn, "NO"], [:route_to, :id, nil]
+        [:stage_data, :any, NODE_ONLY.call('FIXED', 'TIDAL', 'TIMESERIES')], # stage | tidal curve | time series
+        [:gated, :yn, 'NO'], [:route_to, :id, nil]
       ),
       storage: rows(
         [:name, :id], [:elevation, :num], [:max_depth, :num], [:init_depth, :num],
@@ -159,7 +155,7 @@ module Swmm
         [:surcharge_depth, :num, 0], [:evap_fraction, :num, 0], [:seepage, :num, { count: 0..3 }] # [suction] ksat [imd]
       ),
       dividers: rows(
-        [:name, :id], [:elevation, :num], [:diverted_link, :id, "*"], [:type, %w[CUTOFF TABULAR WEIR OVERFLOW]],
+        [:name, :id], [:elevation, :num], [:diverted_link, :id, '*'], [:type, %w[CUTOFF TABULAR WEIR OVERFLOW]],
         [:cutoff_flow, :num, { only: [:type, %w[CUTOFF]] }], [:curve, :id, { only: [:type, %w[TABULAR]] }],
         [:weir_min_flow, :num, { only: [:type, %w[WEIR]] }], [:weir_max_depth, :num, { only: [:type, %w[WEIR]] }],
         [:weir_coefficient, :num, { only: [:type, %w[WEIR]] }],
@@ -172,17 +168,17 @@ module Swmm
         [:in_offset, :any], [:out_offset, :any], [:init_flow, :num, 0], [:max_flow, :num, 0] # offsets accept "*" with LINK_OFFSETS ELEVATION
       ),
       pumps: rows(
-        [:name, :id], [:from_node, :id], [:to_node, :id], [:curve, :id, "*"], [:status, %w[ON OFF], "ON"],
+        [:name, :id], [:from_node, :id], [:to_node, :id], [:curve, :id, '*'], [:status, %w[ON OFF], 'ON'],
         [:startup_depth, :num, 0], [:shutoff_depth, :num, 0]
       ),
       orifices: rows(
         [:name, :id], [:from_node, :id], [:to_node, :id], [:type, %w[SIDE BOTTOM]], [:offset, :any],
-        [:discharge_coeff, :num], [:gated, :yn, "NO"], [:close_time, :num, 0]
+        [:discharge_coeff, :num], [:gated, :yn, 'NO'], [:close_time, :num, 0]
       ),
       weirs: rows(
         [:name, :id], [:from_node, :id], [:to_node, :id], [:type, %w[TRANSVERSE SIDEFLOW V-NOTCH TRAPEZOIDAL ROADWAY]],
-        [:crest_height, :any], [:discharge_coeff, :num], [:gated, :yn, "NO"], [:end_contractions, :num, 0],
-        [:end_coeff, :num, 0], [:can_surcharge, :yn, "YES"], [:road_width, :any, "*"], [:road_surface, :any, "*"],
+        [:crest_height, :any], [:discharge_coeff, :num], [:gated, :yn, 'NO'], [:end_contractions, :num, 0],
+        [:end_coeff, :num, 0], [:can_surcharge, :yn, 'YES'], [:road_width, :any, '*'], [:road_surface, :any, '*'],
         [:coeff_curve, :id, nil]
       ),
       outlets: rows(
@@ -191,7 +187,7 @@ module Swmm
         [:curve, :id, { only: [:type, %w[TABULAR/DEPTH TABULAR/HEAD TABULAR]] }],
         [:coefficient, :num, { only: [:type, %w[FUNCTIONAL/DEPTH FUNCTIONAL/HEAD FUNCTIONAL]] }],
         [:exponent, :num, { only: [:type, %w[FUNCTIONAL/DEPTH FUNCTIONAL/HEAD FUNCTIONAL]] }],
-        [:gated, :yn, "NO"]
+        [:gated, :yn, 'NO']
       ),
       # geom1..4 depend on the shape (see the SWMM manual, Cross-section geometry); CUSTOM: geom1 = height, curve = shape curve
       xsections: rows(
@@ -207,7 +203,7 @@ module Swmm
       ),
       transects: Section.new(:transects),
       losses: rows(
-        [:link, :id], [:inlet, :num, 0], [:outlet, :num, 0], [:average, :num, 0], [:flap_gate, :yn, "NO"],
+        [:link, :id], [:inlet, :num, 0], [:outlet, :num, 0], [:average, :num, 0], [:flap_gate, :yn, 'NO'],
         [:seepage_rate, :num, 0]
       ),
       controls: Section.new(:controls),
@@ -215,7 +211,7 @@ module Swmm
       # --- water quality
       pollutants: rows(
         [:name, :id], [:units, %w[MG/L UG/L #/L]], [:rain_conc, :num], [:groundwater_conc, :num], [:rdii_conc, :num],
-        [:decay_coeff, :num], [:snow_only, :yn, "NO"], [:co_pollutant, :id, "*"], [:co_fraction, :num, 0],
+        [:decay_coeff, :num], [:snow_only, :yn, 'NO'], [:co_pollutant, :id, '*'], [:co_fraction, :num, 0],
         [:dwf_conc, :num, 0], [:init_conc, :num, 0]
       ),
       landuses: rows([:name, :id], [:sweep_interval, :num, 0], [:sweep_removal, :num, 0], [:last_swept, :num, 0]),
@@ -237,18 +233,18 @@ module Swmm
 
       # --- inflows
       inflows: rows(
-        [:node, :id], [:constituent, :id, "FLOW"], [:series, :opt_id, ""],
-        [:type, %w[FLOW CONCEN MASS], ->(r) { (r[:constituent] || "FLOW").to_s.casecmp?("FLOW") ? "FLOW" : "CONCEN" }],
+        [:node, :id], [:constituent, :id, 'FLOW'], [:series, :opt_id, ''],
+        [:type, %w[FLOW CONCEN MASS], ->(r) { (r[:constituent] || 'FLOW').to_s.casecmp?('FLOW') ? 'FLOW' : 'CONCEN' }],
         [:units_factor, :num, 1.0], [:scale_factor, :num, 1.0], [:baseline, :num, 0], [:baseline_pattern, :id, nil]
       ),
-      dwf: rows([:node, :id], [:constituent, :id, "FLOW"], [:average, :num], [:patterns, :opt_id, { count: 0..4 }]),
+      dwf: rows([:node, :id], [:constituent, :id, 'FLOW'], [:average, :num], [:patterns, :opt_id, { count: 0..4 }]),
       patterns: Section.new(:patterns),
       rdii: rows([:node, :id], [:hydrograph, :id], [:sewer_area, :num]),
       hydrographs: block(head: [[:raingage, :id]], parts: {
-        responses: [nil, [[:month, %w[ALL JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC]],
-                          [:response, %w[SHORT MEDIUM LONG]], [:r, :num], [:t, :num], [:k, :num],
-                          [:initial_abstraction_max, :num, 0], [:recovery, :num, 0], [:initial_abstraction, :num, 0]]]
-      }),
+                           responses: [nil, [[:month, %w[ALL JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC]],
+                                             [:response, %w[SHORT MEDIUM LONG]], [:r, :num], [:t, :num], [:k, :num],
+                                             [:initial_abstraction_max, :num, 0], [:recovery, :num, 0], [:initial_abstraction, :num, 0]]]
+                         }),
       curves: Section.new(:curves),
       timeseries: Section.new(:timeseries),
 
@@ -258,20 +254,19 @@ module Swmm
 
       # --- LID, streets and inlets (5.2)
       lid_controls: block(head: [[:type, %w[BC RG GR IT PP RB RD VS]]], parts: {
-        surface: ["SURFACE", LAYER_NUMBERS.(:storage_depth, :vegetation_fraction, :roughness, :surface_slope, :swale_side_slope)],
-        soil: ["SOIL", LAYER_NUMBERS.(:thickness, :porosity, :field_capacity, :wilting_point, :conductivity,
-                                      :conductivity_slope, :suction_head)],
-        storage: ["STORAGE", LAYER_NUMBERS.(:height, :void_ratio, :conductivity, :clog_factor) + [[:covered, :yn, "NO"]]],
-        pavement: ["PAVEMENT", LAYER_NUMBERS.(:thickness, :void_ratio, :impervious_fraction, :permeability, :clog_factor) +
+                            surface: ['SURFACE', LAYER_NUMBERS.call(:storage_depth, :vegetation_fraction, :roughness, :surface_slope, :swale_side_slope)],
+                            soil: ['SOIL', LAYER_NUMBERS.call(:thickness, :porosity, :field_capacity, :wilting_point, :conductivity, :conductivity_slope, :suction_head)],
+                            storage: ['STORAGE', LAYER_NUMBERS.call(:height, :void_ratio, :conductivity, :clog_factor) + [[:covered, :yn, 'NO']]],
+                            pavement: ['PAVEMENT', LAYER_NUMBERS.call(:thickness, :void_ratio, :impervious_fraction, :permeability, :clog_factor) +
                                [[:regen_days, :num, 0], [:regen_degree, :num, 0]]],
-        drainmat: ["DRAINMAT", LAYER_NUMBERS.(:thickness, :void_ratio, :roughness)],
-        drain: ["DRAIN", LAYER_NUMBERS.(:coefficient, :exponent, :offset, :delay) +
+                            drainmat: ['DRAINMAT', LAYER_NUMBERS.call(:thickness, :void_ratio, :roughness)],
+                            drain: ['DRAIN', LAYER_NUMBERS.call(:coefficient, :exponent, :offset, :delay) +
                          [[:open_level, :num, 0], [:close_level, :num, 0], [:control_curve, :id, nil]]],
-        removals: ["REMOVALS", [[:pollutant, :id], [:percent, :num]]]
-      }),
+                            removals: ['REMOVALS', [[:pollutant, :id], [:percent, :num]]]
+                          }),
       lid_usage: rows(
         [:subcatchment, :id], [:lid, :id], [:number, :int], [:area, :num], [:width, :num], [:init_saturation, :num],
-        [:from_impervious, :num], [:to_pervious, :int], [:report_file, :any, "*"], [:drain_to, :any, "*"],
+        [:from_impervious, :num], [:to_pervious, :int], [:report_file, :any, '*'], [:drain_to, :any, '*'],
         [:from_pervious, :num, 0]
       ),
       streets: rows(
@@ -282,7 +277,7 @@ module Swmm
       inlet_usage: rows(
         [:link, :id], [:inlet, :id], [:node, :id], [:count, :int, 1], [:pct_clogged, :num, 0], [:max_flow, :num, 0],
         [:local_depression, :num, 0], [:local_width, :num, 0],
-        [:placement, %w[AUTOMATIC ON_GRADE ON_SAG], "AUTOMATIC"]
+        [:placement, %w[AUTOMATIC ON_GRADE ON_SAG], 'AUTOMATIC']
       ),
       inlets: rows(
         [:name, :id], [:type, %w[GRATE CURB SLOTTED DROP_GRATE DROP_CURB CUSTOM]],
@@ -311,44 +306,56 @@ module Swmm
 
     # Markdown reference of the contract, generated from SECTIONS (rake contract).
     def self.describe
-      out = ["# SWMM input contract", "", "Generated from `Swmm::Schema` — do not edit by hand.", "",
-             "Every section takes an Array of rows (Hash with the columns below, or a raw Array of tokens) " \
-             "unless noted. Column legend: **required**, `default`, *optional*, `list[n]`.", "",
-             "- Units follow `options.flow_units`: LPS/CMS/MLD are SI (m, mm, mm/h, ha); CFS/GPM/MGD are US (ft, in, in/h, acre).",
+      out = ['# SWMM input contract', '', 'Generated from `Swmm::Schema` — do not edit by hand.', '',
+             'Every section takes an Array of rows (Hash with the columns below, or a raw Array of tokens) ' \
+             'unless noted. Column legend: **required**, `default`, *optional*, `list[n]`.', '',
+             '- Units follow `options.flow_units`: LPS/CMS/MLD are SI (m, mm, mm/h, ha); CFS/GPM/MGD are US (ft, in, in/h, acre).',
              "- Percentages are 0-100 unless the column says fraction. `\"*\"` is SWMM's placeholder for a skipped value where it accepts one.",
-             "- Relative file paths are resolved by the engine against the .inp directory; use absolute paths with `Swmm.run(hash)`.",
-             "- Rows may also be raw Arrays of tokens, written as given.", ""]
+             '- Relative file paths are resolved by the engine against the .inp directory; use absolute paths with `Swmm.run(hash)`.',
+             '- Rows may also be raw Arrays of tokens, written as given.', '']
       SECTIONS.each do |name, s|
-        out << "## `#{name}` — `[#{name.to_s.upcase}]`" << ""
+        out << "## `#{name}` — `[#{name.to_s.upcase}]`" << ''
         out.concat(describe_section(s))
-        out << ""
+        out << ''
       end
       out.join("\n")
     end
 
-    def self.describe_section(s)
-      case s.kind
-      when :rows then describe_columns(s.columns)
-      when :options then ["Hash of option => value.", "", s.spec.map { |k, t| "- `#{k}`: #{type_label(t)}" }]
-      when :keywords then ["Hash keyword => value (`true` for a bare keyword, an Array, or a Hash of the columns).", "",
-                           s.spec.map { |k, (text, c)| "- `#{k}` (`#{text}`): #{c.map(&:name).join(", ").then { _1.empty? ? "—" : _1 }}" }]
-      when :block then describe_block(s.spec)
-      else [DOCS.fetch(s.kind)]
+    def self.describe_section(section)
+      case section.kind
+      when :rows then describe_columns(section.columns)
+      when :options then ['Hash of option => value.', '', section.spec.map { |k, t| "- `#{k}`: #{type_label(t)}" }]
+      when :keywords then ['Hash keyword => value (`true` for a bare keyword, an Array, or a Hash of the columns).', '',
+                           section.spec.map { |k, (text, c)| "- `#{k}` (`#{text}`): #{c.map(&:name).join(', ').then { it.empty? ? '—' : it }}" }]
+      when :block then describe_block(section.spec)
+      else [DOCS.fetch(section.kind)]
       end.flatten
     end
 
     def self.describe_block(spec)
-      lines = ["Rows are Hashes with `name`" + (spec[:head] ? " plus #{spec[:head].map { "`#{_1.name}`" }.join(", ")}" : "") +
-               " and these parts (a Hash, or an Array of Hashes for repeated lines):", ""]
-      spec[:parts].each { |k, (kw, c)| lines << "- `#{k}`#{" (`#{kw}`)" if kw}: #{c.map(&:name).join(", ")}" }
+      head = " plus #{spec[:head].map { "`#{it.name}`" }.join(', ')}" if spec[:head]
+      lines = ["Rows are Hashes with `name`#{head} and these parts (a Hash, or an Array of Hashes for repeated lines):", '']
+      spec[:parts].each { |k, (kw, c)| lines << "- `#{k}`#{" (`#{kw}`)" if kw}: #{c.map(&:name).join(', ')}" }
       lines
     end
 
     def self.describe_columns(columns)
-      lines = ["| column | type | |", "|---|---|---|"]
+      lines = ['| column | type | |', '|---|---|---|']
       columns.each do |c|
-        flag = c.list ? "list[#{c.list}]" : (c.required ? "**required**" : (c.default.nil? ? "*optional*" : "`#{c.default.is_a?(Proc) ? "derived" : c.default}`"))
-        only = c.only ? " (when `#{c.only[0]}` is #{only_label(columns, c.only)})" : ""
+        flag = if c.list
+                 "list[#{c.list}]"
+               else
+                 (if c.required
+                    '**required**'
+                  else
+                    (if c.default.nil?
+                       '*optional*'
+                     else
+                       "`#{c.default.is_a?(Proc) ? 'derived' : c.default}`"
+                     end)
+                  end)
+               end
+        only = c.only ? " (when `#{c.only[0]}` is #{only_label(columns, c.only)})" : ''
         lines << "| `#{c.name}` | #{type_label(c.type)} | #{flag}#{only} |"
       end
       lines
@@ -356,23 +363,23 @@ module Swmm
 
     # "FIXED/TIDAL", or "not IRREGULAR/STREET" when that is the shorter way to say it
     def self.only_label(columns, only)
-      all = columns.find { _1.name == only[0] }&.type
+      all = columns.find { it.name == only[0] }&.type
       rest = all.is_a?(Array) ? all - only[1] : []
-      only[1].size > rest.size && rest.any? ? "not #{rest.join(", ")}" : only[1].join(", ")
+      only[1].size > rest.size && rest.any? ? "not #{rest.join(', ')}" : only[1].join(', ')
     end
 
-    def self.type_label(t) = t.is_a?(Array) ? t.join(" \\| ") : t.to_s
+    def self.type_label(type) = type.is_a?(Array) ? type.join(' \\| ') : type.to_s
 
     DOCS = {
-      text: "String or Array of up to 3 lines.",
-      transects: "Rows: `name`, `n_left`, `n_right`, `n_channel`, `x_left`, `x_right`, `x_factor` (1), `y_factor` (1), " \
-                 "`stations` = [[elevation, station], ...].",
-      controls: "Array of rule Hashes `{name:, if: [...], then: [...], else: [...], priority:}` or raw lines (also `VARIABLE`/`EXPRESSION`).",
-      patterns: "Rows: `name`, `type` (MONTHLY 12 | DAILY 7 | HOURLY 24 | WEEKEND 24 factors), `factors`.",
-      curves: "Rows: `name`, `type` (#{CURVE_TYPES.join(" | ")}), `points` = [[x, y], ...].",
+      text: 'String or Array of up to 3 lines.',
+      transects: 'Rows: `name`, `n_left`, `n_right`, `n_channel`, `x_left`, `x_right`, `x_factor` (1), `y_factor` (1), ' \
+                 '`stations` = [[elevation, station], ...].',
+      controls: 'Array of rule Hashes `{name:, if: [...], then: [...], else: [...], priority:}` or raw lines (also `VARIABLE`/`EXPRESSION`).',
+      patterns: 'Rows: `name`, `type` (MONTHLY 12 | DAILY 7 | HOURLY 24 | WEEKEND 24 factors), `factors`.',
+      curves: "Rows: `name`, `type` (#{CURVE_TYPES.join(' | ')}), `points` = [[x, y], ...].",
       timeseries: "Rows: `name` + `points` = [[time, value], ...] (time: Time, 'YYYY-MM-DD HH:MM[:SS]' (zone ignored), elapsed hours or H:MM) or `file`.",
-      report: "Hash: #{REPORT_FLAGS.join(", ")} (true/false) and #{REPORT_OBJECTS.join(", ")} (\"ALL\", \"NONE\" or an Array of ids). " \
-              "**Only objects listed here are saved to the binary output.**"
+      report: "Hash: #{REPORT_FLAGS.join(', ')} (true/false) and #{REPORT_OBJECTS.join(', ')} (\"ALL\", \"NONE\" or an Array of ids). " \
+              '**Only objects listed here are saved to the binary output.**'
     }.freeze
   end
 end
