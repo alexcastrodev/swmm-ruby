@@ -10,24 +10,24 @@ module Swmm
   module Options
     # also OutputFile#flow_units
     module FlowUnits
-      CFS = "CFS"
-      GPM = "GPM"
-      MGD = "MGD"
-      CMS = "CMS"
-      LPS = "LPS"
-      MLD = "MLD"
+      CFS = 'CFS'
+      GPM = 'GPM'
+      MGD = 'MGD'
+      CMS = 'CMS'
+      LPS = 'LPS'
+      MLD = 'MLD'
     end
 
     module FlowRouting
-      NONE = "NONE"
-      STEADY = "STEADY"
-      KINWAVE = "KINWAVE"
-      DYNWAVE = "DYNWAVE"
+      NONE = 'NONE'
+      STEADY = 'STEADY'
+      KINWAVE = 'KINWAVE'
+      DYNWAVE = 'DYNWAVE'
     end
 
     module SurchargeMethod
-      EXTRAN = "EXTRAN"
-      SLOT = "SLOT"
+      EXTRAN = 'EXTRAN'
+      SLOT = 'SLOT'
     end
   end
 end

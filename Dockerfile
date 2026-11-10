@@ -22,4 +22,4 @@ COPY --from=build /usr/local/bundle /usr/local/bundle
 COPY --from=build /app/vendor ./vendor
 COPY --from=build /app/Gemfile.lock ./
 COPY . .
-CMD ["bundle", "exec", "rake", "test"]
+CMD ["bundle", "exec", "rake", "spec"]

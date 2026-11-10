@@ -1,15 +1,15 @@
 # frozen_string_literal: true
 
-require "ffi"
-require "fileutils"
-require "tmpdir"
+require 'ffi'
+require 'fileutils'
+require 'tmpdir'
 
 module Swmm
   # One loaded copy of libswmm5 (the EPA engine). The engine keeps global state, so a copy runs one simulation at a
   # time (lock); Engine.pool hands out private copies of the library file, which run side by side in threads.
   # A crash inside the C code takes the process with it.
   class Engine
-    ROOT = File.expand_path("../..", __dir__)
+    ROOT = File.expand_path('../..', __dir__)
     INIT = Mutex.new
 
     # name => [argument types, return type]
@@ -22,8 +22,8 @@ module Swmm
     class << self
       # Where libswmm5 is looked up, in order: $SWMM_LIB, vendor/swmm (rake swmm:build), the system.
       def library_candidates
-        [ENV.fetch("SWMM_LIB", nil), File.join(ROOT, "vendor", "swmm", "libswmm5.#{FFI::Platform::LIBSUFFIX}"),
-         "swmm5", "libswmm5"].compact
+        [ENV.fetch('SWMM_LIB', nil), File.join(ROOT, 'vendor', 'swmm', "libswmm5.#{FFI::Platform::LIBSUFFIX}"),
+         'swmm5', 'libswmm5'].compact
       end
 
       # The copy behind Swmm.run.
@@ -50,7 +50,10 @@ module Swmm
         INIT.synchronize do
           @pool ||= []
           # only the creator removes the copies: a forked child inherits this hook and would delete them under its parent
-          @copies ||= Dir.mktmpdir("swmm-lib").tap { |dir| owner = Process.pid; at_exit { FileUtils.rm_rf(dir) if Process.pid == owner } }
+          @copies ||= Dir.mktmpdir('swmm-lib').tap do |dir| 
+            owner = Process.pid
+            at_exit { FileUtils.rm_rf(dir) if Process.pid == owner }
+          end
           while @pool.size < count
             copy = File.join(@copies, "#{@pool.size}-#{File.basename(source)}")
             FileUtils.cp(source, copy)
@@ -61,8 +64,8 @@ module Swmm
       end
 
       def library_not_found_message
-        "libswmm5 not found (tried #{library_candidates.join(", ")}); " \
-          "run `rake swmm:build` or set SWMM_LIB to the library path"
+        "libswmm5 not found (tried #{library_candidates.join(', ')}); " \
+          'run `rake swmm:build` or set SWMM_LIB to the library path'
       end
     end
 
@@ -117,7 +120,7 @@ module Swmm
       ptrs = Array.new(3) { FFI::MemoryPointer.new(:float) }
       @lib.swmm_getMassBalErr(*ptrs)
       # float32 read as a double carries noise (-0.14386397600173950): same 7 digits as every series; NaN stays NaN
-      %i[runoff flow_routing quality].zip(ptrs.map { |p| p.read_float.then { _1.finite? ? OutputFile.clean(_1) : _1 } }).to_h
+      %i[runoff flow_routing quality].zip(ptrs.map { |p| p.read_float.then { it.finite? ? OutputReader.clean(it) : it } }).to_h
     end
 
     def error_message

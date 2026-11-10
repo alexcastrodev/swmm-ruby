@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 module Swmm
-  # Names of the variables the .out saves, as constants for Result#series / OutputFile#series (a typo is a NameError
-  # when the code loads instead of an UnknownObject at run time). Written out so editors can complete them; the spec
-  # keeps them equal to OutputFile::VARIABLES. Pollutants ("quality:<name>") are per model and have no constant.
+  # Names of the variables the .out saves, as constants for Element#[] and Collection#frames (a typo is a NameError
+  # when the code loads instead of an UnknownObject at run time): the same Symbols Collection#variables gives. Written
+  # out so editors can complete them; the spec keeps them equal. Pollutants (:"quality:<name>") are per model and have
+  # no constant.
   #
-  #   result.series(:links, "C1", Swmm::Variables::Links::FLOW)
+  #   result.links["C1"][Swmm::Variables::Links::FLOW]
   module Variables
     module Subcatchments
       RAINFALL = :rainfall

@@ -4,7 +4,8 @@ source "https://rubygems.org"
 
 gemspec
 
-gem "minitest"
+gem "rspec"
+gem "yard"
 gem "rake"
 
 group :development, :test do
